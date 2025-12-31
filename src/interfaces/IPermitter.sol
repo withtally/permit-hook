@@ -55,6 +55,25 @@ interface IPermitter {
   /// @notice Emitted when the owner is the zero address.
   error InvalidOwner();
 
+  /// @notice Emitted when a cap value is invalid (zero).
+  error InvalidCap();
+
+  /// @notice Emitted when proposed cap is below current amount.
+  /// @param proposed The proposed new cap.
+  /// @param current The current amount that would exceed the cap.
+  error CapBelowCurrentAmount(uint256 proposed, uint256 current);
+
+  /// @notice Emitted when caller is not the authorized CCA contract.
+  error UnauthorizedCaller();
+
+  /// @notice Emitted when trying to execute an update that wasn't scheduled.
+  error UpdateNotScheduled();
+
+  /// @notice Emitted when trying to execute an update before the delay has passed.
+  /// @param scheduledTime The time when the update can be executed.
+  /// @param currentTime The current block timestamp.
+  error UpdateTooEarly(uint256 scheduledTime, uint256 currentTime);
+
   /// @notice Emitted when a permit is successfully verified.
   /// @param bidder The address of the bidder.
   /// @param bidAmount The amount of tokens bid.
@@ -86,6 +105,22 @@ interface IPermitter {
   /// @param by The address that unpaused the contract.
   event Unpaused(address indexed by);
 
+  /// @notice Emitted when a cap update is scheduled.
+  /// @param capType The type of cap being updated.
+  /// @param newCap The new cap value to be applied.
+  /// @param executeTime The timestamp when the update can be executed.
+  event CapUpdateScheduled(CapType indexed capType, uint256 newCap, uint256 executeTime);
+
+  /// @notice Emitted when a signer update is scheduled.
+  /// @param newSigner The new signer address to be applied.
+  /// @param executeTime The timestamp when the update can be executed.
+  event SignerUpdateScheduled(address indexed newSigner, uint256 executeTime);
+
+  /// @notice Emitted when the authorized caller is updated.
+  /// @param oldCaller The old authorized caller address.
+  /// @param newCaller The new authorized caller address.
+  event AuthorizedCallerUpdated(address indexed oldCaller, address indexed newCaller);
+
   /// @notice Validates a bid in the CCA auction.
   /// @dev Called by CCA contract before accepting bid.
   /// @param bidder Address attempting to place bid.
@@ -100,18 +135,37 @@ interface IPermitter {
     bytes calldata permitData
   ) external returns (bool valid);
 
-  /// @notice Update the maximum total ETH cap (owner only).
+  /// @notice Schedule an update to the maximum total ETH cap (owner only).
+  /// @dev Update will be executable after UPDATE_DELAY has passed.
   /// @param newMaxTotalEth New ETH cap.
-  function updateMaxTotalEth(uint256 newMaxTotalEth) external;
+  function scheduleUpdateMaxTotalEth(uint256 newMaxTotalEth) external;
 
-  /// @notice Update the maximum tokens per bidder cap (owner only).
+  /// @notice Execute a scheduled update to the maximum total ETH cap (owner only).
+  /// @dev Reverts if no update is scheduled or delay hasn't passed.
+  function executeUpdateMaxTotalEth() external;
+
+  /// @notice Schedule an update to the maximum tokens per bidder cap (owner only).
+  /// @dev Update will be executable after UPDATE_DELAY has passed.
   /// @param newMaxTokensPerBidder New per-bidder cap.
-  function updateMaxTokensPerBidder(uint256 newMaxTokensPerBidder) external;
+  function scheduleUpdateMaxTokensPerBidder(uint256 newMaxTokensPerBidder) external;
 
-  /// @notice Update the trusted signer address (owner only).
-  /// @dev Use this to rotate keys if signing key is compromised.
+  /// @notice Execute a scheduled update to the maximum tokens per bidder cap (owner only).
+  /// @dev Reverts if no update is scheduled or delay hasn't passed.
+  function executeUpdateMaxTokensPerBidder() external;
+
+  /// @notice Schedule an update to the trusted signer address (owner only).
+  /// @dev Update will be executable after UPDATE_DELAY has passed.
   /// @param newSigner New trusted signer address.
-  function updateTrustedSigner(address newSigner) external;
+  function scheduleUpdateTrustedSigner(address newSigner) external;
+
+  /// @notice Execute a scheduled update to the trusted signer (owner only).
+  /// @dev Reverts if no update is scheduled or delay hasn't passed.
+  function executeUpdateTrustedSigner() external;
+
+  /// @notice Update the authorized caller address (owner only).
+  /// @dev No timelock - can be updated immediately for emergency CCA changes.
+  /// @param newCaller New authorized caller address.
+  function updateAuthorizedCaller(address newCaller) external;
 
   /// @notice Emergency pause all bid validations (owner only).
   function pause() external;
@@ -147,4 +201,36 @@ interface IPermitter {
   /// @notice Check if the contract is paused.
   /// @return True if paused, false otherwise.
   function paused() external view returns (bool);
+
+  /// @notice Get the authorized caller address (CCA contract).
+  /// @return The authorized caller address.
+  function authorizedCaller() external view returns (address);
+
+  /// @notice Get the timelock delay for parameter updates.
+  /// @return The delay in seconds.
+  function UPDATE_DELAY() external view returns (uint256);
+
+  /// @notice Get the pending max total ETH update.
+  /// @return The pending value.
+  function pendingMaxTotalEth() external view returns (uint256);
+
+  /// @notice Get the time when pending max total ETH update can be executed.
+  /// @return The timestamp.
+  function pendingMaxTotalEthTime() external view returns (uint256);
+
+  /// @notice Get the pending max tokens per bidder update.
+  /// @return The pending value.
+  function pendingMaxTokensPerBidder() external view returns (uint256);
+
+  /// @notice Get the time when pending max tokens per bidder update can be executed.
+  /// @return The timestamp.
+  function pendingMaxTokensPerBidderTime() external view returns (uint256);
+
+  /// @notice Get the pending trusted signer update.
+  /// @return The pending address.
+  function pendingTrustedSigner() external view returns (address);
+
+  /// @notice Get the time when pending trusted signer update can be executed.
+  /// @return The timestamp.
+  function pendingTrustedSignerTime() external view returns (uint256);
 }

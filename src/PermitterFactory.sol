@@ -16,6 +16,7 @@ contract PermitterFactory is IPermitterFactory {
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
     address owner,
+    address authorizedCaller,
     bytes32 salt
   ) external returns (address permitter) {
     // Compute the final salt using the sender address to prevent front-running
@@ -23,10 +24,14 @@ contract PermitterFactory is IPermitterFactory {
 
     // Deploy the Permitter using CREATE2
     permitter = address(
-      new Permitter{salt: finalSalt}(trustedSigner, maxTotalEth, maxTokensPerBidder, owner)
+      new Permitter{salt: finalSalt}(
+        trustedSigner, maxTotalEth, maxTokensPerBidder, owner, authorizedCaller
+      )
     );
 
-    emit PermitterCreated(permitter, owner, trustedSigner, maxTotalEth, maxTokensPerBidder);
+    emit PermitterCreated(
+      permitter, owner, trustedSigner, authorizedCaller, maxTotalEth, maxTokensPerBidder
+    );
   }
 
   /// @inheritdoc IPermitterFactory
@@ -35,6 +40,7 @@ contract PermitterFactory is IPermitterFactory {
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
     address owner,
+    address authorizedCaller,
     bytes32 salt
   ) external view returns (address) {
     // Compute the final salt the same way as in createPermitter
@@ -43,7 +49,7 @@ contract PermitterFactory is IPermitterFactory {
     // Compute the init code hash
     bytes memory initCode = abi.encodePacked(
       type(Permitter).creationCode,
-      abi.encode(trustedSigner, maxTotalEth, maxTokensPerBidder, owner)
+      abi.encode(trustedSigner, maxTotalEth, maxTokensPerBidder, owner, authorizedCaller)
     );
     bytes32 initCodeHash = keccak256(initCode);
 

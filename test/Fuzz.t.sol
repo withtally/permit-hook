@@ -14,6 +14,7 @@ contract FuzzTest is Test {
   address public owner = makeAddr("owner");
   address public trustedSigner;
   uint256 public signerPrivateKey;
+  address public authorizedCaller = makeAddr("authorizedCaller");
 
   uint256 public constant MAX_TOTAL_ETH = 100 ether;
   uint256 public constant MAX_TOKENS_PER_BIDDER = 1000 ether;
@@ -26,7 +27,8 @@ contract FuzzTest is Test {
     trustedSigner = vm.addr(signerPrivateKey);
 
     factory = new PermitterFactory();
-    permitter = new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner);
+    permitter =
+      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
   }
 
   function _createPermitSignature(address _bidder, uint256 _maxBidAmount, uint256 _expiry)
@@ -55,9 +57,8 @@ contract FuzzTest is Test {
     uint256 _expiry,
     uint256 _privateKey
   ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit = IPermitter.Permit({
-      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
-    });
+    IPermitter.Permit memory permit =
+      IPermitter.Permit({bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry});
 
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
@@ -93,6 +94,7 @@ contract SignatureVerificationFuzz is FuzzTest {
 
     // Should revert with either InvalidSignature or an ECDSA error
     vm.expectRevert();
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, bidAmount, 1, permitData);
   }
 
@@ -112,6 +114,7 @@ contract SignatureVerificationFuzz is FuzzTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, trustedSigner, recoveredSigner)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -130,6 +133,7 @@ contract SignatureVerificationFuzz is FuzzTest {
     uint256 expiry = block.timestamp + expiryOffset;
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
+    vm.prank(authorizedCaller);
     bool result = permitter.validateBid(bidder, bidAmount, ethValue, permitData);
 
     assertTrue(result);
@@ -161,6 +165,7 @@ contract CapEnforcementFuzz is FuzzTest {
 
       if (totalBid + bidAmount <= permitMax) {
         // Bid should succeed
+        vm.prank(authorizedCaller);
         permitter.validateBid(bidder, bidAmount, 0, permitData);
         totalBid += bidAmount;
         assertEq(permitter.getBidAmount(bidder), totalBid);
@@ -171,6 +176,7 @@ contract CapEnforcementFuzz is FuzzTest {
             IPermitter.ExceedsPersonalCap.selector, bidAmount, permitMax, totalBid
           )
         );
+        vm.prank(authorizedCaller);
         permitter.validateBid(bidder, bidAmount, 0, permitData);
       }
     }
@@ -196,6 +202,7 @@ contract CapEnforcementFuzz is FuzzTest {
 
       if (totalEth + ethValue <= MAX_TOTAL_ETH) {
         // Should succeed
+        vm.prank(authorizedCaller);
         permitter.validateBid(bidder, 100 ether, ethValue, permitData);
         totalEth += ethValue;
         assertEq(permitter.getTotalEthRaised(), totalEth);
@@ -206,6 +213,7 @@ contract CapEnforcementFuzz is FuzzTest {
             IPermitter.ExceedsTotalCap.selector, ethValue, MAX_TOTAL_ETH, totalEth
           )
         );
+        vm.prank(authorizedCaller);
         permitter.validateBid(bidder, 100 ether, ethValue, permitData);
       }
     }
@@ -231,6 +239,7 @@ contract ExpiryEnforcementFuzz is FuzzTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -245,6 +254,7 @@ contract ExpiryEnforcementFuzz is FuzzTest {
     // Warp to just before expiry
     vm.warp(expiry - 1);
 
+    vm.prank(authorizedCaller);
     bool result = permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
     assertTrue(result);
   }
@@ -252,31 +262,36 @@ contract ExpiryEnforcementFuzz is FuzzTest {
 
 /// @notice Fuzz tests for owner functions.
 contract OwnerFunctionsFuzz is FuzzTest {
-  /// @notice Fuzz test that non-owners cannot update caps.
-  function testFuzz_NonOwnerCannotUpdateMaxTotalEth(address caller, uint256 newCap) public {
+  /// @notice Fuzz test that non-owners cannot schedule cap updates.
+  function testFuzz_NonOwnerCannotScheduleMaxTotalEth(address caller, uint256 newCap) public {
     vm.assume(caller != owner);
+    vm.assume(newCap > 0); // Must be > 0 for valid cap
 
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(caller);
-    permitter.updateMaxTotalEth(newCap);
+    permitter.scheduleUpdateMaxTotalEth(newCap);
   }
 
-  /// @notice Fuzz test that non-owners cannot update per-bidder cap.
-  function testFuzz_NonOwnerCannotUpdateMaxTokensPerBidder(address caller, uint256 newCap) public {
+  /// @notice Fuzz test that non-owners cannot schedule per-bidder cap updates.
+  function testFuzz_NonOwnerCannotScheduleMaxTokensPerBidder(address caller, uint256 newCap)
+    public
+  {
     vm.assume(caller != owner);
+    vm.assume(newCap > 0); // Must be > 0 for valid cap
 
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(caller);
-    permitter.updateMaxTokensPerBidder(newCap);
+    permitter.scheduleUpdateMaxTokensPerBidder(newCap);
   }
 
-  /// @notice Fuzz test that non-owners cannot update signer.
-  function testFuzz_NonOwnerCannotUpdateSigner(address caller, address newSigner) public {
+  /// @notice Fuzz test that non-owners cannot schedule signer updates.
+  function testFuzz_NonOwnerCannotScheduleSigner(address caller, address newSigner) public {
     vm.assume(caller != owner);
+    vm.assume(newSigner != address(0)); // Must be non-zero for valid signer
 
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(caller);
-    permitter.updateTrustedSigner(newSigner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
   }
 
   /// @notice Fuzz test that non-owners cannot pause.
@@ -288,14 +303,28 @@ contract OwnerFunctionsFuzz is FuzzTest {
     permitter.pause();
   }
 
-  /// @notice Fuzz test that owner can update caps to any value.
-  function testFuzz_OwnerCanUpdateCaps(uint256 newTotalEth, uint256 newPerBidder) public {
+  /// @notice Fuzz test that owner can schedule and execute cap updates (after timelock).
+  function testFuzz_OwnerCanUpdateCapsWithTimelock(uint256 newTotalEth, uint256 newPerBidder)
+    public
+  {
+    // Bound to valid non-zero values
+    newTotalEth = bound(newTotalEth, 1, type(uint256).max);
+    newPerBidder = bound(newPerBidder, 1, type(uint256).max);
+
     vm.startPrank(owner);
 
-    permitter.updateMaxTotalEth(newTotalEth);
+    // Schedule updates
+    permitter.scheduleUpdateMaxTotalEth(newTotalEth);
+    permitter.scheduleUpdateMaxTokensPerBidder(newPerBidder);
+
+    // Advance past timelock
+    vm.warp(block.timestamp + 1 hours + 1);
+
+    // Execute updates
+    permitter.executeUpdateMaxTotalEth();
     assertEq(permitter.maxTotalEth(), newTotalEth);
 
-    permitter.updateMaxTokensPerBidder(newPerBidder);
+    permitter.executeUpdateMaxTokensPerBidder();
     assertEq(permitter.maxTokensPerBidder(), newPerBidder);
 
     vm.stopPrank();
@@ -311,20 +340,34 @@ contract FactoryFuzz is FuzzTest {
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
     address fuzzedOwner,
+    address fuzzedAuthorizedCaller,
     bytes32 salt
   ) public {
     vm.assume(deployer != address(0));
     vm.assume(fuzzedTrustedSigner != address(0));
     vm.assume(fuzzedOwner != address(0));
+    // Bound to valid non-zero caps
+    maxTotalEth = bound(maxTotalEth, 1, type(uint256).max);
+    maxTokensPerBidder = bound(maxTokensPerBidder, 1, type(uint256).max);
 
     vm.startPrank(deployer);
 
     address predicted = factory.predictPermitterAddress(
-      fuzzedTrustedSigner, maxTotalEth, maxTokensPerBidder, fuzzedOwner, salt
+      fuzzedTrustedSigner,
+      maxTotalEth,
+      maxTokensPerBidder,
+      fuzzedOwner,
+      fuzzedAuthorizedCaller,
+      salt
     );
 
     address actual = factory.createPermitter(
-      fuzzedTrustedSigner, maxTotalEth, maxTokensPerBidder, fuzzedOwner, salt
+      fuzzedTrustedSigner,
+      maxTotalEth,
+      maxTokensPerBidder,
+      fuzzedOwner,
+      fuzzedAuthorizedCaller,
+      salt
     );
 
     vm.stopPrank();
@@ -341,11 +384,11 @@ contract FactoryFuzz is FuzzTest {
     vm.startPrank(deployer);
 
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, salt1
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt1
     );
 
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, salt2
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt2
     );
 
     vm.stopPrank();
@@ -365,12 +408,12 @@ contract FactoryFuzz is FuzzTest {
 
     vm.prank(deployer1);
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, salt
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt
     );
 
     vm.prank(deployer2);
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, salt
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt
     );
 
     assertTrue(addr1 != addr2);

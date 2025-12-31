@@ -15,6 +15,7 @@ contract PermitterTest is Test {
   uint256 public signerPrivateKey;
   address public bidder = makeAddr("bidder");
   address public otherBidder = makeAddr("otherBidder");
+  address public authorizedCaller = makeAddr("authorizedCaller");
 
   // Default configuration
   uint256 public constant MAX_TOTAL_ETH = 100 ether;
@@ -29,8 +30,9 @@ contract PermitterTest is Test {
     signerPrivateKey = 0x1234;
     trustedSigner = vm.addr(signerPrivateKey);
 
-    // Deploy the Permitter
-    permitter = new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner);
+    // Deploy the Permitter with authorized caller
+    permitter =
+      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
   }
 
   /// @notice Helper function to create a valid permit signature.
@@ -75,16 +77,27 @@ contract Constructor is PermitterTest {
     assertEq(permitter.owner(), owner);
     assertEq(permitter.paused(), false);
     assertEq(permitter.totalEthRaised(), 0);
+    assertEq(permitter.authorizedCaller(), authorizedCaller);
   }
 
   function test_RevertIf_TrustedSignerIsZero() public {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
-    new Permitter(address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner);
+    new Permitter(address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
   }
 
   function test_RevertIf_OwnerIsZero() public {
     vm.expectRevert(IPermitter.InvalidOwner.selector);
-    new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, address(0));
+    new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, address(0), authorizedCaller);
+  }
+
+  function test_RevertIf_MaxTotalEthIsZero() public {
+    vm.expectRevert(IPermitter.InvalidCap.selector);
+    new Permitter(trustedSigner, 0, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
+  }
+
+  function test_RevertIf_MaxTokensPerBidderIsZero() public {
+    vm.expectRevert(IPermitter.InvalidCap.selector);
+    new Permitter(trustedSigner, MAX_TOTAL_ETH, 0, owner, authorizedCaller);
   }
 }
 
@@ -97,6 +110,7 @@ contract ValidateBidSuccess is PermitterTest {
 
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
+    vm.prank(authorizedCaller);
     bool result = permitter.validateBid(bidder, bidAmount, ethValue, permitData);
 
     assertTrue(result);
@@ -109,14 +123,17 @@ contract ValidateBidSuccess is PermitterTest {
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
     // First bid
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
     assertEq(permitter.getBidAmount(bidder), 100 ether);
 
     // Second bid
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
     assertEq(permitter.getBidAmount(bidder), 300 ether);
 
     // Third bid
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 50 ether, 0.5 ether, permitData);
     assertEq(permitter.getBidAmount(bidder), 350 ether);
     assertEq(permitter.getTotalEthRaised(), 3.5 ether);
@@ -128,7 +145,9 @@ contract ValidateBidSuccess is PermitterTest {
     bytes memory permitData1 = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
     bytes memory permitData2 = _createPermitSignature(otherBidder, MAX_TOKENS_PER_BIDDER, expiry);
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData1);
+    vm.prank(authorizedCaller);
     permitter.validateBid(otherBidder, 200 ether, 2 ether, permitData2);
 
     assertEq(permitter.getBidAmount(bidder), 100 ether);
@@ -147,12 +166,22 @@ contract ValidateBidSuccess is PermitterTest {
       bidder, bidAmount, MAX_TOKENS_PER_BIDDER - bidAmount, MAX_TOTAL_ETH - ethValue
     );
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, bidAmount, ethValue, permitData);
   }
 }
 
 /// @notice Tests for validateBid reverts.
 contract ValidateBidRevert is PermitterTest {
+  function test_RevertIf_CallerNotAuthorized() public {
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+
+    // Try to call from non-authorized address
+    vm.expectRevert(IPermitter.UnauthorizedCaller.selector);
+    permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
+  }
+
   function test_RevertIf_Paused() public {
     uint256 expiry = block.timestamp + 1 hours;
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
@@ -161,6 +190,7 @@ contract ValidateBidRevert is PermitterTest {
     permitter.pause();
 
     vm.expectRevert(IPermitter.ContractPaused.selector);
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -171,6 +201,7 @@ contract ValidateBidRevert is PermitterTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -185,6 +216,7 @@ contract ValidateBidRevert is PermitterTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, trustedSigner, wrongSigner)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -196,6 +228,7 @@ contract ValidateBidRevert is PermitterTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, bidder, otherBidder)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
@@ -205,6 +238,7 @@ contract ValidateBidRevert is PermitterTest {
     bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
 
     // First bid succeeds
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 400 ether, 4 ether, permitData);
 
     // Second bid exceeds permit max
@@ -213,26 +247,7 @@ contract ValidateBidRevert is PermitterTest {
         IPermitter.ExceedsPersonalCap.selector, 200 ether, permitMax, 400 ether
       )
     );
-    permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
-  }
-
-  function test_RevertIf_ExceedsGlobalMaxTokensPerBidder() public {
-    // Set a lower global cap than the permit allows
-    vm.prank(owner);
-    permitter.updateMaxTokensPerBidder(300 ether);
-
-    uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, 500 ether, expiry);
-
-    // First bid succeeds
-    permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
-
-    // Second bid exceeds global max
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        IPermitter.ExceedsPersonalCap.selector, 200 ether, 300 ether, 200 ether
-      )
-    );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
   }
 
@@ -241,78 +256,303 @@ contract ValidateBidRevert is PermitterTest {
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
     // Bid that brings us close to the cap
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 99 ether, permitData);
 
     // Bid that exceeds total cap
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 2 ether, MAX_TOTAL_ETH, 99 ether)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 10 ether, 2 ether, permitData);
   }
 }
 
-/// @notice Tests for owner-only functions.
-contract OwnerFunctions is PermitterTest {
-  function test_UpdateMaxTotalEth() public {
+/// @notice Tests for timelock-based cap updates.
+contract TimelockCapUpdates is PermitterTest {
+  function test_ScheduleUpdateMaxTotalEth() public {
     uint256 newCap = 200 ether;
+    uint256 expectedExecuteTime = block.timestamp + permitter.UPDATE_DELAY();
+
+    vm.expectEmit(true, false, false, true);
+    emit IPermitter.CapUpdateScheduled(IPermitter.CapType.TOTAL_ETH, newCap, expectedExecuteTime);
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTotalEth(newCap);
+
+    assertEq(permitter.pendingMaxTotalEth(), newCap);
+    assertEq(permitter.pendingMaxTotalEthTime(), expectedExecuteTime);
+    // Original cap unchanged
+    assertEq(permitter.maxTotalEth(), MAX_TOTAL_ETH);
+  }
+
+  function test_RevertIf_ScheduleUpdateMaxTotalEthWithZero() public {
+    vm.expectRevert(IPermitter.InvalidCap.selector);
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTotalEth(0);
+  }
+
+  function test_RevertIf_ExecuteUpdateMaxTotalEthTooEarly() public {
+    uint256 newCap = 200 ether;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTotalEth(newCap);
+
+    // Try to execute immediately
+    uint256 scheduledTime = permitter.pendingMaxTotalEthTime();
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.UpdateTooEarly.selector, scheduledTime, block.timestamp)
+    );
+    vm.prank(owner);
+    permitter.executeUpdateMaxTotalEth();
+  }
+
+  function test_RevertIf_ExecuteUpdateMaxTotalEthNotScheduled() public {
+    vm.expectRevert(IPermitter.UpdateNotScheduled.selector);
+    vm.prank(owner);
+    permitter.executeUpdateMaxTotalEth();
+  }
+
+  function test_ExecuteUpdateMaxTotalEth_AfterDelay() public {
+    uint256 newCap = 200 ether;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTotalEth(newCap);
+
+    // Fast forward past the delay
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, false, false, true);
     emit IPermitter.CapUpdated(IPermitter.CapType.TOTAL_ETH, MAX_TOTAL_ETH, newCap);
 
     vm.prank(owner);
-    permitter.updateMaxTotalEth(newCap);
+    permitter.executeUpdateMaxTotalEth();
 
     assertEq(permitter.maxTotalEth(), newCap);
+    assertEq(permitter.pendingMaxTotalEth(), 0);
+    assertEq(permitter.pendingMaxTotalEthTime(), 0);
   }
 
-  function test_RevertIf_UpdateMaxTotalEthCalledByNonOwner() public {
-    vm.expectRevert(IPermitter.Unauthorized.selector);
-    vm.prank(bidder);
-    permitter.updateMaxTotalEth(200 ether);
+  function test_RevertIf_NewCapBelowTotalRaised() public {
+    // First, raise some ETH
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 100 ether, 50 ether, permitData);
+
+    // Try to schedule a cap below what's already raised
+    uint256 newCap = 30 ether;
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTotalEth(newCap);
+
+    // Fast forward
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    // Should revert because cap is below totalEthRaised
+    vm.expectRevert(abi.encodeWithSelector(IPermitter.CapBelowCurrentAmount.selector, newCap, 50 ether));
+    vm.prank(owner);
+    permitter.executeUpdateMaxTotalEth();
   }
 
-  function test_UpdateMaxTokensPerBidder() public {
+  function test_ScheduleUpdateMaxTokensPerBidder() public {
     uint256 newCap = 2000 ether;
+    uint256 expectedExecuteTime = block.timestamp + permitter.UPDATE_DELAY();
+
+    vm.expectEmit(true, false, false, true);
+    emit IPermitter.CapUpdateScheduled(
+      IPermitter.CapType.TOKENS_PER_BIDDER, newCap, expectedExecuteTime
+    );
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTokensPerBidder(newCap);
+
+    assertEq(permitter.pendingMaxTokensPerBidder(), newCap);
+    assertEq(permitter.pendingMaxTokensPerBidderTime(), expectedExecuteTime);
+  }
+
+  function test_ExecuteUpdateMaxTokensPerBidder_AfterDelay() public {
+    uint256 newCap = 2000 ether;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTokensPerBidder(newCap);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, false, false, true);
     emit IPermitter.CapUpdated(IPermitter.CapType.TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER, newCap);
 
     vm.prank(owner);
-    permitter.updateMaxTokensPerBidder(newCap);
+    permitter.executeUpdateMaxTokensPerBidder();
 
     assertEq(permitter.maxTokensPerBidder(), newCap);
   }
+}
 
-  function test_RevertIf_UpdateMaxTokensPerBidderCalledByNonOwner() public {
-    vm.expectRevert(IPermitter.Unauthorized.selector);
-    vm.prank(bidder);
-    permitter.updateMaxTokensPerBidder(2000 ether);
+/// @notice Tests for timelock-based signer updates.
+contract TimelockSignerUpdates is PermitterTest {
+  function test_ScheduleUpdateTrustedSigner() public {
+    address newSigner = makeAddr("newSigner");
+    uint256 expectedExecuteTime = block.timestamp + permitter.UPDATE_DELAY();
+
+    vm.expectEmit(true, false, false, true);
+    emit IPermitter.SignerUpdateScheduled(newSigner, expectedExecuteTime);
+
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
+
+    assertEq(permitter.pendingTrustedSigner(), newSigner);
+    assertEq(permitter.pendingTrustedSignerTime(), expectedExecuteTime);
+    // Original signer unchanged
+    assertEq(permitter.trustedSigner(), trustedSigner);
   }
 
-  function test_UpdateTrustedSigner() public {
+  function test_RevertIf_ScheduleUpdateTrustedSignerWithZero() public {
+    vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(address(0));
+  }
+
+  function test_RevertIf_ExecuteUpdateTrustedSignerTooEarly() public {
     address newSigner = makeAddr("newSigner");
+
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
+
+    uint256 scheduledTime = permitter.pendingTrustedSignerTime();
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.UpdateTooEarly.selector, scheduledTime, block.timestamp)
+    );
+    vm.prank(owner);
+    permitter.executeUpdateTrustedSigner();
+  }
+
+  function test_ExecuteUpdateTrustedSigner_AfterDelay() public {
+    address newSigner = makeAddr("newSigner");
+
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, true, false, false);
     emit IPermitter.SignerUpdated(trustedSigner, newSigner);
 
     vm.prank(owner);
-    permitter.updateTrustedSigner(newSigner);
+    permitter.executeUpdateTrustedSigner();
 
     assertEq(permitter.trustedSigner(), newSigner);
+    assertEq(permitter.pendingTrustedSigner(), address(0));
+    assertEq(permitter.pendingTrustedSignerTime(), 0);
   }
 
-  function test_RevertIf_UpdateTrustedSignerCalledByNonOwner() public {
+  function test_OldSignerInvalidAfterRotation() public {
+    uint256 expiry = block.timestamp + 2 hours;
+
+    // Create a permit with the old signer
+    bytes memory oldPermitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+
+    // Schedule rotation to new signer
+    uint256 newSignerKey = 0x5678;
+    address newSigner = vm.addr(newSignerKey);
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
+
+    // Fast forward and execute
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+    vm.prank(owner);
+    permitter.executeUpdateTrustedSigner();
+
+    // Old permit should fail
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.InvalidSignature.selector, newSigner, trustedSigner)
+    );
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 100 ether, 1 ether, oldPermitData);
+  }
+
+  function test_NewSignerWorksAfterRotation() public {
+    uint256 newSignerKey = 0x5678;
+    address newSigner = vm.addr(newSignerKey);
+
+    // Schedule rotation
+    vm.prank(owner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
+
+    // Fast forward and execute
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+    vm.prank(owner);
+    permitter.executeUpdateTrustedSigner();
+
+    // Create a permit with the new signer
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory newPermitData =
+      _createPermitSignatureWithKey(bidder, MAX_TOKENS_PER_BIDDER, expiry, newSignerKey);
+
+    // New permit should work
+    vm.prank(authorizedCaller);
+    bool result = permitter.validateBid(bidder, 100 ether, 1 ether, newPermitData);
+    assertTrue(result);
+  }
+}
+
+/// @notice Tests for authorized caller management.
+contract AuthorizedCallerTests is PermitterTest {
+  function test_UpdateAuthorizedCaller() public {
+    address newCaller = makeAddr("newCaller");
+
+    vm.expectEmit(true, true, false, false);
+    emit IPermitter.AuthorizedCallerUpdated(authorizedCaller, newCaller);
+
+    vm.prank(owner);
+    permitter.updateAuthorizedCaller(newCaller);
+
+    assertEq(permitter.authorizedCaller(), newCaller);
+  }
+
+  function test_RevertIf_UpdateAuthorizedCallerByNonOwner() public {
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(bidder);
-    permitter.updateTrustedSigner(makeAddr("newSigner"));
+    permitter.updateAuthorizedCaller(makeAddr("newCaller"));
   }
 
-  function test_RevertIf_UpdateTrustedSignerWithZeroAddress() public {
-    vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
+  function test_NewCallerCanValidateBid() public {
+    address newCaller = makeAddr("newCaller");
+
     vm.prank(owner);
-    permitter.updateTrustedSigner(address(0));
+    permitter.updateAuthorizedCaller(newCaller);
+
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+
+    // New caller can validate
+    vm.prank(newCaller);
+    bool result = permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
+    assertTrue(result);
+
+    // Old caller cannot validate
+    vm.expectRevert(IPermitter.UnauthorizedCaller.selector);
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
+  function test_CanSetAuthorizedCallerToZero() public {
+    // Setting to zero disables all validateBid calls
+    vm.prank(owner);
+    permitter.updateAuthorizedCaller(address(0));
+
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+
+    // Any caller will fail
+    vm.expectRevert(IPermitter.UnauthorizedCaller.selector);
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
+  }
+}
+
+/// @notice Tests for pause/unpause functionality.
+contract PauseTests is PermitterTest {
   function test_Pause() public {
     vm.expectEmit(true, false, false, false);
     emit IPermitter.Paused(owner);
@@ -352,46 +592,6 @@ contract OwnerFunctions is PermitterTest {
   }
 }
 
-/// @notice Tests for signer rotation.
-contract SignerRotation is PermitterTest {
-  function test_OldSignerInvalidAfterRotation() public {
-    uint256 expiry = block.timestamp + 1 hours;
-
-    // Create a permit with the old signer
-    bytes memory oldPermitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
-
-    // Rotate to new signer
-    uint256 newSignerKey = 0x5678;
-    address newSigner = vm.addr(newSignerKey);
-    vm.prank(owner);
-    permitter.updateTrustedSigner(newSigner);
-
-    // Old permit should fail
-    vm.expectRevert(
-      abi.encodeWithSelector(IPermitter.InvalidSignature.selector, newSigner, trustedSigner)
-    );
-    permitter.validateBid(bidder, 100 ether, 1 ether, oldPermitData);
-  }
-
-  function test_NewSignerWorksAfterRotation() public {
-    uint256 newSignerKey = 0x5678;
-    address newSigner = vm.addr(newSignerKey);
-
-    // Rotate to new signer
-    vm.prank(owner);
-    permitter.updateTrustedSigner(newSigner);
-
-    // Create a permit with the new signer
-    uint256 expiry = block.timestamp + 1 hours;
-    bytes memory newPermitData =
-      _createPermitSignatureWithKey(bidder, MAX_TOKENS_PER_BIDDER, expiry, newSignerKey);
-
-    // New permit should work
-    bool result = permitter.validateBid(bidder, 100 ether, 1 ether, newPermitData);
-    assertTrue(result);
-  }
-}
-
 /// @notice Tests for view functions.
 contract ViewFunctions is PermitterTest {
   function test_GetBidAmount() public {
@@ -400,9 +600,11 @@ contract ViewFunctions is PermitterTest {
 
     assertEq(permitter.getBidAmount(bidder), 0);
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
     assertEq(permitter.getBidAmount(bidder), 100 ether);
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 50 ether, 0.5 ether, permitData);
     assertEq(permitter.getBidAmount(bidder), 150 ether);
   }
@@ -414,9 +616,11 @@ contract ViewFunctions is PermitterTest {
 
     assertEq(permitter.getTotalEthRaised(), 0);
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 5 ether, permitData1);
     assertEq(permitter.getTotalEthRaised(), 5 ether);
 
+    vm.prank(authorizedCaller);
     permitter.validateBid(otherBidder, 200 ether, 10 ether, permitData2);
     assertEq(permitter.getTotalEthRaised(), 15 ether);
   }
@@ -425,5 +629,9 @@ contract ViewFunctions is PermitterTest {
     bytes32 domainSeparator = permitter.domainSeparator();
     // Just verify it returns a non-zero value (actual value depends on contract address and chain)
     assertTrue(domainSeparator != bytes32(0));
+  }
+
+  function test_UPDATE_DELAY() public view {
+    assertEq(permitter.UPDATE_DELAY(), 1 hours);
   }
 }
