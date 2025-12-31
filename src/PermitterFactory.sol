@@ -49,7 +49,9 @@ contract PermitterFactory is IPermitterFactory {
 
     // Compute the CREATE2 address
     return address(
-      uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), finalSalt, initCodeHash))))
+      uint160(
+        uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), finalSalt, initCodeHash)))
+      )
     );
   }
 }

@@ -47,9 +47,12 @@ contract Permitter is IPermitter, EIP712 {
   /// @param _maxTotalEth Maximum total ETH that can be raised.
   /// @param _maxTokensPerBidder Maximum tokens any single bidder can purchase.
   /// @param _owner Address that can update caps and pause.
-  constructor(address _trustedSigner, uint256 _maxTotalEth, uint256 _maxTokensPerBidder, address _owner)
-    EIP712("Permitter", "1")
-  {
+  constructor(
+    address _trustedSigner,
+    uint256 _maxTotalEth,
+    uint256 _maxTokensPerBidder,
+    address _owner
+  ) EIP712("Permitter", "1") {
     if (_trustedSigner == address(0)) revert InvalidTrustedSigner();
     if (_owner == address(0)) revert InvalidOwner();
 
@@ -79,14 +82,10 @@ contract Permitter is IPermitter, EIP712 {
 
     // 4. MODERATE: Verify EIP-712 signature
     address recovered = _recoverSigner(permit, signature);
-    if (recovered != trustedSigner) {
-      revert InvalidSignature(trustedSigner, recovered);
-    }
+    if (recovered != trustedSigner) revert InvalidSignature(trustedSigner, recovered);
 
     // 5. Check permit is for this bidder
-    if (permit.bidder != bidder) {
-      revert InvalidSignature(bidder, permit.bidder);
-    }
+    if (permit.bidder != bidder) revert InvalidSignature(bidder, permit.bidder);
 
     // 6. STORAGE READ: Check individual cap
     uint256 alreadyBid = cumulativeBids[bidder];
@@ -103,9 +102,7 @@ contract Permitter is IPermitter, EIP712 {
     // 7. STORAGE READ: Check global cap
     uint256 alreadyRaised = totalEthRaised;
     uint256 newTotalEth = alreadyRaised + ethValue;
-    if (newTotalEth > maxTotalEth) {
-      revert ExceedsTotalCap(ethValue, maxTotalEth, alreadyRaised);
-    }
+    if (newTotalEth > maxTotalEth) revert ExceedsTotalCap(ethValue, maxTotalEth, alreadyRaised);
 
     // 8. STORAGE WRITE: Update state
     cumulativeBids[bidder] = newCumulative;
@@ -173,7 +170,11 @@ contract Permitter is IPermitter, EIP712 {
   /// @param permit The permit struct.
   /// @param signature The EIP-712 signature.
   /// @return The recovered signer address.
-  function _recoverSigner(Permit memory permit, bytes memory signature) internal view returns (address) {
+  function _recoverSigner(Permit memory permit, bytes memory signature)
+    internal
+    view
+    returns (address)
+  {
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
     bytes32 digest = _hashTypedDataV4(structHash);

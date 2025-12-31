@@ -61,7 +61,10 @@ interface IPermitter {
   /// @param remainingPersonalCap The remaining tokens the bidder can purchase.
   /// @param remainingTotalCap The remaining ETH that can be raised.
   event PermitVerified(
-    address indexed bidder, uint256 bidAmount, uint256 remainingPersonalCap, uint256 remainingTotalCap
+    address indexed bidder,
+    uint256 bidAmount,
+    uint256 remainingPersonalCap,
+    uint256 remainingTotalCap
   );
 
   /// @notice Emitted when a cap is updated.
@@ -90,9 +93,12 @@ interface IPermitter {
   /// @param ethValue Amount of ETH being bid (passed by CCA contract).
   /// @param permitData ABI-encoded permit signature and metadata.
   /// @return valid True if bid is permitted, reverts otherwise with custom error.
-  function validateBid(address bidder, uint256 bidAmount, uint256 ethValue, bytes calldata permitData)
-    external
-    returns (bool valid);
+  function validateBid(
+    address bidder,
+    uint256 bidAmount,
+    uint256 ethValue,
+    bytes calldata permitData
+  ) external returns (bool valid);
 
   /// @notice Update the maximum total ETH cap (owner only).
   /// @param newMaxTotalEth New ETH cap.

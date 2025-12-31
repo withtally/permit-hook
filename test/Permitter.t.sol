@@ -49,8 +49,9 @@ contract PermitterTest is Test {
     uint256 _expiry,
     uint256 _privateKey
   ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit =
-      IPermitter.Permit({bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry});
+    IPermitter.Permit memory permit = IPermitter.Permit({
+      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
+    });
 
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
@@ -76,12 +77,12 @@ contract Constructor is PermitterTest {
     assertEq(permitter.totalEthRaised(), 0);
   }
 
-  function test_RevertsWhenTrustedSignerIsZero() public {
+  function test_RevertIf_TrustedSignerIsZero() public {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
     new Permitter(address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner);
   }
 
-  function test_RevertsWhenOwnerIsZero() public {
+  function test_RevertIf_OwnerIsZero() public {
     vm.expectRevert(IPermitter.InvalidOwner.selector);
     new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, address(0));
   }
@@ -152,7 +153,7 @@ contract ValidateBidSuccess is PermitterTest {
 
 /// @notice Tests for validateBid reverts.
 contract ValidateBidRevert is PermitterTest {
-  function test_RevertsWhenPaused() public {
+  function test_RevertIf_Paused() public {
     uint256 expiry = block.timestamp + 1 hours;
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
@@ -163,15 +164,17 @@ contract ValidateBidRevert is PermitterTest {
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
-  function test_RevertsWhenSignatureExpired() public {
+  function test_RevertIf_SignatureExpired() public {
     uint256 expiry = block.timestamp - 1; // Already expired
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
-    vm.expectRevert(abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp));
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp)
+    );
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
-  function test_RevertsWhenSignatureFromWrongSigner() public {
+  function test_RevertIf_SignatureFromWrongSigner() public {
     uint256 wrongSignerKey = 0x5678;
     address wrongSigner = vm.addr(wrongSignerKey);
     uint256 expiry = block.timestamp + 1 hours;
@@ -185,16 +188,18 @@ contract ValidateBidRevert is PermitterTest {
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
-  function test_RevertsWhenBidderMismatch() public {
+  function test_RevertIf_BidderMismatch() public {
     uint256 expiry = block.timestamp + 1 hours;
     // Create permit for otherBidder but try to use it for bidder
     bytes memory permitData = _createPermitSignature(otherBidder, MAX_TOKENS_PER_BIDDER, expiry);
 
-    vm.expectRevert(abi.encodeWithSelector(IPermitter.InvalidSignature.selector, bidder, otherBidder));
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.InvalidSignature.selector, bidder, otherBidder)
+    );
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
-  function test_RevertsWhenExceedsPermitMaxBidAmount() public {
+  function test_RevertIf_ExceedsPermitMaxBidAmount() public {
     uint256 permitMax = 500 ether;
     uint256 expiry = block.timestamp + 1 hours;
     bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
@@ -204,12 +209,14 @@ contract ValidateBidRevert is PermitterTest {
 
     // Second bid exceeds permit max
     vm.expectRevert(
-      abi.encodeWithSelector(IPermitter.ExceedsPersonalCap.selector, 200 ether, permitMax, 400 ether)
+      abi.encodeWithSelector(
+        IPermitter.ExceedsPersonalCap.selector, 200 ether, permitMax, 400 ether
+      )
     );
     permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
   }
 
-  function test_RevertsWhenExceedsGlobalMaxTokensPerBidder() public {
+  function test_RevertIf_ExceedsGlobalMaxTokensPerBidder() public {
     // Set a lower global cap than the permit allows
     vm.prank(owner);
     permitter.updateMaxTokensPerBidder(300 ether);
@@ -222,12 +229,14 @@ contract ValidateBidRevert is PermitterTest {
 
     // Second bid exceeds global max
     vm.expectRevert(
-      abi.encodeWithSelector(IPermitter.ExceedsPersonalCap.selector, 200 ether, 300 ether, 200 ether)
+      abi.encodeWithSelector(
+        IPermitter.ExceedsPersonalCap.selector, 200 ether, 300 ether, 200 ether
+      )
     );
     permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
   }
 
-  function test_RevertsWhenExceedsTotalEthCap() public {
+  function test_RevertIf_ExceedsTotalEthCap() public {
     uint256 expiry = block.timestamp + 1 hours;
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
 
@@ -256,7 +265,7 @@ contract OwnerFunctions is PermitterTest {
     assertEq(permitter.maxTotalEth(), newCap);
   }
 
-  function test_UpdateMaxTotalEthRevertsForNonOwner() public {
+  function test_RevertIf_UpdateMaxTotalEthCalledByNonOwner() public {
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(bidder);
     permitter.updateMaxTotalEth(200 ether);
@@ -274,7 +283,7 @@ contract OwnerFunctions is PermitterTest {
     assertEq(permitter.maxTokensPerBidder(), newCap);
   }
 
-  function test_UpdateMaxTokensPerBidderRevertsForNonOwner() public {
+  function test_RevertIf_UpdateMaxTokensPerBidderCalledByNonOwner() public {
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(bidder);
     permitter.updateMaxTokensPerBidder(2000 ether);
@@ -292,13 +301,13 @@ contract OwnerFunctions is PermitterTest {
     assertEq(permitter.trustedSigner(), newSigner);
   }
 
-  function test_UpdateTrustedSignerRevertsForNonOwner() public {
+  function test_RevertIf_UpdateTrustedSignerCalledByNonOwner() public {
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(bidder);
     permitter.updateTrustedSigner(makeAddr("newSigner"));
   }
 
-  function test_UpdateTrustedSignerRevertsForZeroAddress() public {
+  function test_RevertIf_UpdateTrustedSignerWithZeroAddress() public {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
     vm.prank(owner);
     permitter.updateTrustedSigner(address(0));
@@ -314,7 +323,7 @@ contract OwnerFunctions is PermitterTest {
     assertTrue(permitter.paused());
   }
 
-  function test_PauseRevertsForNonOwner() public {
+  function test_RevertIf_PauseCalledByNonOwner() public {
     vm.expectRevert(IPermitter.Unauthorized.selector);
     vm.prank(bidder);
     permitter.pause();
@@ -333,7 +342,7 @@ contract OwnerFunctions is PermitterTest {
     assertFalse(permitter.paused());
   }
 
-  function test_UnpauseRevertsForNonOwner() public {
+  function test_RevertIf_UnpauseCalledByNonOwner() public {
     vm.prank(owner);
     permitter.pause();
 

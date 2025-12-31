@@ -40,8 +40,9 @@ contract IntegrationTest is Test {
 
     // Deploy a Permitter for a specific auction
     vm.prank(deployer);
-    address permitterAddress =
-      factory.createPermitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, auctionOwner, AUCTION_SALT);
+    address permitterAddress = factory.createPermitter(
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, auctionOwner, AUCTION_SALT
+    );
     permitter = Permitter(permitterAddress);
   }
 
@@ -149,7 +150,9 @@ contract FullAuctionLifecycle is IntegrationTest {
 
     // Next bid should fail
     vm.expectRevert(
-      abi.encodeWithSelector(IPermitter.ExceedsPersonalCap.selector, 1 ether, personalCap, 500 ether)
+      abi.encodeWithSelector(
+        IPermitter.ExceedsPersonalCap.selector, 1 ether, personalCap, 500 ether
+      )
     );
     permitter.validateBid(bidder1, 1 ether, 0.01 ether, permit);
   }
@@ -207,7 +210,12 @@ contract EmergencyScenarios is IntegrationTest {
       IPermitter.Permit({bidder: bidder1, maxBidAmount: MAX_TOKENS_PER_BIDDER, expiry: expiry});
 
     bytes32 structHash = keccak256(
-      abi.encode(PERMIT_TYPEHASH, newPermitStruct.bidder, newPermitStruct.maxBidAmount, newPermitStruct.expiry)
+      abi.encode(
+        PERMIT_TYPEHASH,
+        newPermitStruct.bidder,
+        newPermitStruct.maxBidAmount,
+        newPermitStruct.expiry
+      )
     );
 
     bytes32 domainSeparator = permitter.domainSeparator();
@@ -347,8 +355,10 @@ contract MultipleAuctions is IntegrationTest {
 
     // Create permits for each auction (each has its own domain separator)
     bytes memory permit1 = _createPermitSignatureForPermitter(bidder1, 400 ether, expiry, permitter);
-    bytes memory permit2 = _createPermitSignatureForPermitter(bidder1, 300 ether, expiry, permitter2);
-    bytes memory permit3 = _createPermitSignatureForPermitter(bidder1, 1000 ether, expiry, permitter3);
+    bytes memory permit2 =
+      _createPermitSignatureForPermitter(bidder1, 300 ether, expiry, permitter2);
+    bytes memory permit3 =
+      _createPermitSignatureForPermitter(bidder1, 1000 ether, expiry, permitter3);
 
     // Bid in all auctions
     permitter.validateBid(bidder1, 100 ether, 10 ether, permit1);
@@ -369,7 +379,8 @@ contract MultipleAuctions is IntegrationTest {
     uint256 expiry = block.timestamp + 24 hours;
 
     // Create permit for auction 1
-    bytes memory permit1 = _createPermitSignatureForPermitter(bidder1, MAX_TOKENS_PER_BIDDER, expiry, permitter);
+    bytes memory permit1 =
+      _createPermitSignatureForPermitter(bidder1, MAX_TOKENS_PER_BIDDER, expiry, permitter);
 
     // Try to use it in auction 2 - should fail because domain separator is different
     vm.expectRevert();
@@ -382,8 +393,9 @@ contract MultipleAuctions is IntegrationTest {
     uint256 _expiry,
     Permitter _permitter
   ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit =
-      IPermitter.Permit({bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry});
+    IPermitter.Permit memory permit = IPermitter.Permit({
+      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
+    });
 
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
