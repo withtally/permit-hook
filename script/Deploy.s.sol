@@ -4,11 +4,15 @@
 pragma solidity 0.8.30;
 
 import {Script} from "forge-std/Script.sol";
-import {Counter} from "src/Counter.sol";
+import {PermitterFactory} from "src/PermitterFactory.sol";
 
+/// @notice Deployment script for the PermitterFactory contract.
+/// @dev The factory is deployed with CREATE2 to ensure the same address across all chains.
 contract Deploy is Script {
-  function run() public returns (Counter _counter) {
+  /// @notice Deploys the PermitterFactory contract.
+  /// @return factory The deployed PermitterFactory contract.
+  function run() public returns (PermitterFactory factory) {
     vm.broadcast();
-    _counter = new Counter();
+    factory = new PermitterFactory();
   }
 }
