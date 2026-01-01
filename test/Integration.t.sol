@@ -16,6 +16,7 @@ contract IntegrationTest is Test {
   address public auctionOwner = makeAddr("auctionOwner");
   address public trustedSigner;
   uint256 public signerPrivateKey;
+  address public authorizedCaller = makeAddr("ccaContract");
 
   address public bidder1 = makeAddr("bidder1");
   address public bidder2 = makeAddr("bidder2");
@@ -41,7 +42,12 @@ contract IntegrationTest is Test {
     // Deploy a Permitter for a specific auction
     vm.prank(deployer);
     address permitterAddress = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, auctionOwner, AUCTION_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      auctionOwner,
+      authorizedCaller,
+      AUCTION_SALT
     );
     permitter = Permitter(permitterAddress);
   }
@@ -78,7 +84,8 @@ contract FullAuctionLifecycle is IntegrationTest {
     bytes memory permit2 = _createPermitSignature(bidder2, 300 ether, expiry);
     bytes memory permit3 = _createPermitSignature(bidder3, 500 ether, expiry);
 
-    // Bidder 1 places multiple bids
+    // Bidder 1 places multiple bids (via authorized caller)
+    vm.startPrank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 10 ether, permit1);
     permitter.validateBid(bidder1, 150 ether, 15 ether, permit1);
 
@@ -103,6 +110,7 @@ contract FullAuctionLifecycle is IntegrationTest {
 
     assertEq(permitter.getBidAmount(bidder1), 350 ether);
     assertEq(permitter.getTotalEthRaised(), 85 ether);
+    vm.stopPrank();
 
     // Verify final state
     assertEq(permitter.getBidAmount(bidder1), 350 ether);
@@ -116,6 +124,8 @@ contract FullAuctionLifecycle is IntegrationTest {
 
     bytes memory permit1 = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
     bytes memory permit2 = _createPermitSignature(bidder2, MAX_TOKENS_PER_BIDDER, expiry);
+
+    vm.startPrank(authorizedCaller);
 
     // Fill up most of the cap
     permitter.validateBid(bidder1, 100 ether, 50 ether, permit1);
@@ -133,6 +143,7 @@ contract FullAuctionLifecycle is IntegrationTest {
       abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 1, MAX_TOTAL_ETH, 100 ether)
     );
     permitter.validateBid(bidder2, 1 ether, 1, permit2);
+    vm.stopPrank();
   }
 
   function test_BidderReachesPersonalCap() public {
@@ -140,6 +151,8 @@ contract FullAuctionLifecycle is IntegrationTest {
     uint256 personalCap = 500 ether;
 
     bytes memory permit = _createPermitSignature(bidder1, personalCap, expiry);
+
+    vm.startPrank(authorizedCaller);
 
     // Place bids up to the personal cap
     permitter.validateBid(bidder1, 200 ether, 2 ether, permit);
@@ -155,6 +168,7 @@ contract FullAuctionLifecycle is IntegrationTest {
       )
     );
     permitter.validateBid(bidder1, 1 ether, 0.01 ether, permit);
+    vm.stopPrank();
   }
 }
 
@@ -165,6 +179,7 @@ contract EmergencyScenarios is IntegrationTest {
     bytes memory permit = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
 
     // Place a bid successfully
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     // Owner pauses the auction
@@ -173,6 +188,7 @@ contract EmergencyScenarios is IntegrationTest {
 
     // Bid should fail while paused
     vm.expectRevert(IPermitter.ContractPaused.selector);
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     // Owner unpauses
@@ -180,29 +196,44 @@ contract EmergencyScenarios is IntegrationTest {
     permitter.unpause();
 
     // Bid should succeed again
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     assertEq(permitter.getBidAmount(bidder1), 200 ether);
   }
 
-  function test_SignerKeyRotation() public {
-    uint256 expiry = block.timestamp + 24 hours;
+  function test_SignerKeyRotationWithTimelock() public {
+    uint256 expiry = block.timestamp + 2 hours;
 
     // Place a bid with the original signer
     bytes memory permit = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
-    // Rotate to a new signer
+    // Schedule rotation to a new signer
     uint256 newSignerKey = 0x5678;
     address newSigner = vm.addr(newSignerKey);
 
     vm.prank(auctionOwner);
-    permitter.updateTrustedSigner(newSigner);
+    permitter.scheduleUpdateTrustedSigner(newSigner);
 
-    // Old permit should fail
+    // Old permit still works during timelock period (grace period)
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
+    assertEq(permitter.getBidAmount(bidder1), 200 ether);
+
+    // Advance past timelock
+    vm.warp(block.timestamp + 1 hours + 1);
+
+    // Execute the signer update
+    vm.prank(auctionOwner);
+    permitter.executeUpdateTrustedSigner();
+
+    // Old permit should fail now
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, newSigner, trustedSigner)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     // Create a new permit with the new signer
@@ -226,56 +257,84 @@ contract EmergencyScenarios is IntegrationTest {
     bytes memory newPermitData = abi.encode(newPermitStruct, newSignature);
 
     // New permit should work
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, newPermitData);
 
-    assertEq(permitter.getBidAmount(bidder1), 200 ether);
+    assertEq(permitter.getBidAmount(bidder1), 300 ether);
   }
 
-  function test_OwnerAdjustsCapsLowerDuringAuction() public {
-    uint256 expiry = block.timestamp + 24 hours;
+  function test_OwnerAdjustsCapsWithTimelock() public {
+    uint256 expiry = block.timestamp + 2 hours;
     bytes memory permit = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
 
     // Place initial bids
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 400 ether, 40 ether, permit);
 
-    // Owner lowers the total cap
+    // Owner schedules cap reduction
     vm.prank(auctionOwner);
-    permitter.updateMaxTotalEth(50 ether);
+    permitter.scheduleUpdateMaxTotalEth(50 ether);
 
-    // Next bid exceeds the new cap
+    // During timelock, old cap still applies - bid succeeds
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder1, 50 ether, 5 ether, permit);
+
+    // Advance past timelock
+    vm.warp(block.timestamp + 1 hours + 1);
+
+    // Execute cap update
+    vm.prank(auctionOwner);
+    permitter.executeUpdateMaxTotalEth();
+
+    // Now the new cap applies - next bid exceeds it
     vm.expectRevert(
-      abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 15 ether, 50 ether, 40 ether)
+      abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 10 ether, 50 ether, 45 ether)
     );
-    permitter.validateBid(bidder1, 100 ether, 15 ether, permit);
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder1, 100 ether, 10 ether, permit);
 
     // But a smaller bid should work
-    permitter.validateBid(bidder1, 50 ether, 10 ether, permit);
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder1, 50 ether, 5 ether, permit);
 
     assertEq(permitter.getTotalEthRaised(), 50 ether);
   }
 
-  function test_OwnerAdjustsCapsHigherDuringAuction() public {
-    uint256 expiry = block.timestamp + 24 hours;
+  function test_OwnerRaisesCapWithTimelock() public {
+    uint256 expiry = block.timestamp + 3 hours;
     bytes memory permit = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
 
-    // Set a low initial cap
+    // Schedule a low initial cap
     vm.prank(auctionOwner);
-    permitter.updateMaxTotalEth(10 ether);
+    permitter.scheduleUpdateMaxTotalEth(10 ether);
+
+    vm.warp(block.timestamp + 1 hours + 1);
+
+    vm.prank(auctionOwner);
+    permitter.executeUpdateMaxTotalEth();
 
     // Place bids up to the cap
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 10 ether, permit);
 
     // Next bid fails
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 1 ether, 10 ether, 10 ether)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 10 ether, 1 ether, permit);
 
-    // Owner raises the cap
+    // Owner schedules cap increase
     vm.prank(auctionOwner);
-    permitter.updateMaxTotalEth(100 ether);
+    permitter.scheduleUpdateMaxTotalEth(100 ether);
+
+    vm.warp(block.timestamp + 1 hours + 1);
+
+    vm.prank(auctionOwner);
+    permitter.executeUpdateMaxTotalEth();
 
     // Now the bid succeeds
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 10 ether, permit);
 
     assertEq(permitter.getTotalEthRaised(), 20 ether);
@@ -289,6 +348,7 @@ contract PermitExpiry is IntegrationTest {
     bytes memory permit = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry);
 
     // Bid succeeds before expiry
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     // Warp past expiry
@@ -298,6 +358,7 @@ contract PermitExpiry is IntegrationTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
   }
 
@@ -306,6 +367,7 @@ contract PermitExpiry is IntegrationTest {
     bytes memory permit1 = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry1);
 
     // Use first permit
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit1);
 
     // Warp past first expiry
@@ -315,6 +377,7 @@ contract PermitExpiry is IntegrationTest {
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry1, block.timestamp)
     );
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit1);
 
     // Get a new permit with new expiry
@@ -322,6 +385,7 @@ contract PermitExpiry is IntegrationTest {
     bytes memory permit2 = _createPermitSignature(bidder1, MAX_TOKENS_PER_BIDDER, expiry2);
 
     // New permit works
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit2);
 
     assertEq(permitter.getBidAmount(bidder1), 200 ether);
@@ -332,6 +396,8 @@ contract PermitExpiry is IntegrationTest {
 contract MultipleAuctions is IntegrationTest {
   Permitter public permitter2;
   Permitter public permitter3;
+  address public authorizedCaller2 = makeAddr("ccaContract2");
+  address public authorizedCaller3 = makeAddr("ccaContract3");
 
   function setUp() public override {
     super.setUp();
@@ -339,10 +405,10 @@ contract MultipleAuctions is IntegrationTest {
     // Deploy additional permitters for different auctions
     vm.startPrank(deployer);
     address permitter2Address = factory.createPermitter(
-      trustedSigner, 50 ether, 500 ether, auctionOwner, bytes32(uint256(2))
+      trustedSigner, 50 ether, 500 ether, auctionOwner, authorizedCaller2, bytes32(uint256(2))
     );
     address permitter3Address = factory.createPermitter(
-      trustedSigner, 200 ether, 2000 ether, auctionOwner, bytes32(uint256(3))
+      trustedSigner, 200 ether, 2000 ether, auctionOwner, authorizedCaller3, bytes32(uint256(3))
     );
     vm.stopPrank();
 
@@ -360,9 +426,14 @@ contract MultipleAuctions is IntegrationTest {
     bytes memory permit3 =
       _createPermitSignatureForPermitter(bidder1, 1000 ether, expiry, permitter3);
 
-    // Bid in all auctions
+    // Bid in all auctions (each via their respective authorized caller)
+    vm.prank(authorizedCaller);
     permitter.validateBid(bidder1, 100 ether, 10 ether, permit1);
+
+    vm.prank(authorizedCaller2);
     permitter2.validateBid(bidder1, 200 ether, 20 ether, permit2);
+
+    vm.prank(authorizedCaller3);
     permitter3.validateBid(bidder1, 500 ether, 50 ether, permit3);
 
     // Verify each auction has independent state
@@ -384,6 +455,7 @@ contract MultipleAuctions is IntegrationTest {
 
     // Try to use it in auction 2 - should fail because domain separator is different
     vm.expectRevert();
+    vm.prank(authorizedCaller2);
     permitter2.validateBid(bidder1, 100 ether, 10 ether, permit1);
   }
 

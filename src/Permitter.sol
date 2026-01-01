@@ -15,6 +15,9 @@ contract Permitter is IPermitter, EIP712 {
   bytes32 public constant PERMIT_TYPEHASH =
     keccak256("Permit(address bidder,uint256 maxBidAmount,uint256 expiry)");
 
+  /// @notice Timelock delay for parameter updates (1 hour).
+  uint256 public constant UPDATE_DELAY = 1 hours;
+
   /// @notice Address authorized to sign permits.
   address public trustedSigner;
 
@@ -36,6 +39,27 @@ contract Permitter is IPermitter, EIP712 {
   /// @notice Whether the contract is paused.
   bool public paused;
 
+  /// @notice Authorized caller (CCA contract) that can call validateBid.
+  address public authorizedCaller;
+
+  /// @notice Pending maxTotalEth update value.
+  uint256 public pendingMaxTotalEth;
+
+  /// @notice Time when pending maxTotalEth update can be executed.
+  uint256 public pendingMaxTotalEthTime;
+
+  /// @notice Pending maxTokensPerBidder update value.
+  uint256 public pendingMaxTokensPerBidder;
+
+  /// @notice Time when pending maxTokensPerBidder update can be executed.
+  uint256 public pendingMaxTokensPerBidderTime;
+
+  /// @notice Pending trustedSigner update address.
+  address public pendingTrustedSigner;
+
+  /// @notice Time when pending trustedSigner update can be executed.
+  uint256 public pendingTrustedSignerTime;
+
   /// @notice Modifier to restrict access to owner only.
   modifier onlyOwner() {
     if (msg.sender != owner) revert Unauthorized();
@@ -47,19 +71,24 @@ contract Permitter is IPermitter, EIP712 {
   /// @param _maxTotalEth Maximum total ETH that can be raised.
   /// @param _maxTokensPerBidder Maximum tokens any single bidder can purchase.
   /// @param _owner Address that can update caps and pause.
+  /// @param _authorizedCaller CCA contract authorized to call validateBid.
   constructor(
     address _trustedSigner,
     uint256 _maxTotalEth,
     uint256 _maxTokensPerBidder,
-    address _owner
+    address _owner,
+    address _authorizedCaller
   ) EIP712("Permitter", "1") {
     if (_trustedSigner == address(0)) revert InvalidTrustedSigner();
     if (_owner == address(0)) revert InvalidOwner();
+    if (_maxTotalEth == 0) revert InvalidCap();
+    if (_maxTokensPerBidder == 0) revert InvalidCap();
 
     trustedSigner = _trustedSigner;
     maxTotalEth = _maxTotalEth;
     maxTokensPerBidder = _maxTokensPerBidder;
     owner = _owner;
+    authorizedCaller = _authorizedCaller;
   }
 
   /// @inheritdoc IPermitter
@@ -69,6 +98,9 @@ contract Permitter is IPermitter, EIP712 {
     uint256 ethValue,
     bytes calldata permitData
   ) external returns (bool valid) {
+    // 0. Check caller is authorized CCA contract
+    if (msg.sender != authorizedCaller) revert UnauthorizedCaller();
+
     // 1. CHEAPEST: Check if paused
     if (paused) revert ContractPaused();
 
@@ -117,25 +149,97 @@ contract Permitter is IPermitter, EIP712 {
   }
 
   /// @inheritdoc IPermitter
-  function updateMaxTotalEth(uint256 newMaxTotalEth) external onlyOwner {
+  function scheduleUpdateMaxTotalEth(uint256 newMaxTotalEth) external onlyOwner {
+    if (newMaxTotalEth == 0) revert InvalidCap();
+
+    uint256 executeTime = block.timestamp + UPDATE_DELAY;
+    pendingMaxTotalEth = newMaxTotalEth;
+    pendingMaxTotalEthTime = executeTime;
+
+    emit CapUpdateScheduled(CapType.TOTAL_ETH, newMaxTotalEth, executeTime);
+  }
+
+  /// @inheritdoc IPermitter
+  function executeUpdateMaxTotalEth() external onlyOwner {
+    if (pendingMaxTotalEthTime == 0) revert UpdateNotScheduled();
+    if (block.timestamp < pendingMaxTotalEthTime) {
+      revert UpdateTooEarly(pendingMaxTotalEthTime, block.timestamp);
+    }
+    if (pendingMaxTotalEth < totalEthRaised) {
+      revert CapBelowCurrentAmount(pendingMaxTotalEth, totalEthRaised);
+    }
+
     uint256 oldCap = maxTotalEth;
-    maxTotalEth = newMaxTotalEth;
-    emit CapUpdated(CapType.TOTAL_ETH, oldCap, newMaxTotalEth);
+    maxTotalEth = pendingMaxTotalEth;
+
+    // Clear pending update
+    pendingMaxTotalEth = 0;
+    pendingMaxTotalEthTime = 0;
+
+    emit CapUpdated(CapType.TOTAL_ETH, oldCap, maxTotalEth);
   }
 
   /// @inheritdoc IPermitter
-  function updateMaxTokensPerBidder(uint256 newMaxTokensPerBidder) external onlyOwner {
+  function scheduleUpdateMaxTokensPerBidder(uint256 newMaxTokensPerBidder) external onlyOwner {
+    if (newMaxTokensPerBidder == 0) revert InvalidCap();
+
+    uint256 executeTime = block.timestamp + UPDATE_DELAY;
+    pendingMaxTokensPerBidder = newMaxTokensPerBidder;
+    pendingMaxTokensPerBidderTime = executeTime;
+
+    emit CapUpdateScheduled(CapType.TOKENS_PER_BIDDER, newMaxTokensPerBidder, executeTime);
+  }
+
+  /// @inheritdoc IPermitter
+  function executeUpdateMaxTokensPerBidder() external onlyOwner {
+    if (pendingMaxTokensPerBidderTime == 0) revert UpdateNotScheduled();
+    if (block.timestamp < pendingMaxTokensPerBidderTime) {
+      revert UpdateTooEarly(pendingMaxTokensPerBidderTime, block.timestamp);
+    }
+
     uint256 oldCap = maxTokensPerBidder;
-    maxTokensPerBidder = newMaxTokensPerBidder;
-    emit CapUpdated(CapType.TOKENS_PER_BIDDER, oldCap, newMaxTokensPerBidder);
+    maxTokensPerBidder = pendingMaxTokensPerBidder;
+
+    // Clear pending update
+    pendingMaxTokensPerBidder = 0;
+    pendingMaxTokensPerBidderTime = 0;
+
+    emit CapUpdated(CapType.TOKENS_PER_BIDDER, oldCap, maxTokensPerBidder);
   }
 
   /// @inheritdoc IPermitter
-  function updateTrustedSigner(address newSigner) external onlyOwner {
+  function scheduleUpdateTrustedSigner(address newSigner) external onlyOwner {
     if (newSigner == address(0)) revert InvalidTrustedSigner();
+
+    uint256 executeTime = block.timestamp + UPDATE_DELAY;
+    pendingTrustedSigner = newSigner;
+    pendingTrustedSignerTime = executeTime;
+
+    emit SignerUpdateScheduled(newSigner, executeTime);
+  }
+
+  /// @inheritdoc IPermitter
+  function executeUpdateTrustedSigner() external onlyOwner {
+    if (pendingTrustedSignerTime == 0) revert UpdateNotScheduled();
+    if (block.timestamp < pendingTrustedSignerTime) {
+      revert UpdateTooEarly(pendingTrustedSignerTime, block.timestamp);
+    }
+
     address oldSigner = trustedSigner;
-    trustedSigner = newSigner;
-    emit SignerUpdated(oldSigner, newSigner);
+    trustedSigner = pendingTrustedSigner;
+
+    // Clear pending update
+    pendingTrustedSigner = address(0);
+    pendingTrustedSignerTime = 0;
+
+    emit SignerUpdated(oldSigner, trustedSigner);
+  }
+
+  /// @inheritdoc IPermitter
+  function updateAuthorizedCaller(address newCaller) external onlyOwner {
+    address oldCaller = authorizedCaller;
+    authorizedCaller = newCaller;
+    emit AuthorizedCallerUpdated(oldCaller, newCaller);
   }
 
   /// @inheritdoc IPermitter

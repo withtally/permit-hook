@@ -9,12 +9,14 @@ interface IPermitterFactory {
   /// @param permitter The address of the deployed Permitter contract.
   /// @param owner The address that can update caps and pause.
   /// @param trustedSigner The address authorized to sign permits.
+  /// @param authorizedCaller The CCA contract authorized to call validateBid.
   /// @param maxTotalEth The maximum total ETH that can be raised.
   /// @param maxTokensPerBidder The maximum tokens any single bidder can purchase.
   event PermitterCreated(
     address indexed permitter,
     address indexed owner,
     address indexed trustedSigner,
+    address authorizedCaller,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder
   );
@@ -24,6 +26,7 @@ interface IPermitterFactory {
   /// @param maxTotalEth Maximum total ETH that can be raised in the auction.
   /// @param maxTokensPerBidder Maximum tokens any single bidder can purchase.
   /// @param owner Address that can update caps and pause (auction creator).
+  /// @param authorizedCaller CCA contract address authorized to call validateBid.
   /// @param salt Salt for CREATE2 deployment to enable deterministic addresses.
   /// @return permitter Address of deployed Permitter contract.
   function createPermitter(
@@ -31,6 +34,7 @@ interface IPermitterFactory {
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
     address owner,
+    address authorizedCaller,
     bytes32 salt
   ) external returns (address permitter);
 
@@ -39,6 +43,7 @@ interface IPermitterFactory {
   /// @param maxTotalEth Maximum total ETH that can be raised.
   /// @param maxTokensPerBidder Maximum tokens any single bidder can purchase.
   /// @param owner Address that can update caps and pause.
+  /// @param authorizedCaller CCA contract address authorized to call validateBid.
   /// @param salt Salt for CREATE2 deployment.
   /// @return The predicted address of the Permitter.
   function predictPermitterAddress(
@@ -46,6 +51,7 @@ interface IPermitterFactory {
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
     address owner,
+    address authorizedCaller,
     bytes32 salt
   ) external view returns (address);
 }
