@@ -57,8 +57,9 @@ contract FuzzTest is Test {
     uint256 _expiry,
     uint256 _privateKey
   ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit =
-      IPermitter.Permit({bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry});
+    IPermitter.Permit memory permit = IPermitter.Permit({
+      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
+    });
 
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));

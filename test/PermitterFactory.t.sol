@@ -110,7 +110,12 @@ contract CreatePermitter is PermitterFactoryTest {
     vm.expectRevert(IPermitter.InvalidOwner.selector);
     vm.prank(deployer);
     factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, address(0), authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      address(0),
+      authorizedCaller,
+      DEFAULT_SALT
     );
   }
 
@@ -125,9 +130,7 @@ contract CreatePermitter is PermitterFactoryTest {
   function test_RevertIf_MaxTokensPerBidderIsZero() public {
     vm.expectRevert(IPermitter.InvalidCap.selector);
     vm.prank(deployer);
-    factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, 0, owner, authorizedCaller, DEFAULT_SALT
-    );
+    factory.createPermitter(trustedSigner, MAX_TOTAL_ETH, 0, owner, authorizedCaller, DEFAULT_SALT);
   }
 }
 
@@ -166,7 +169,12 @@ contract PredictPermitterAddress is PermitterFactoryTest {
 
     address differentOwner = makeAddr("differentOwner");
     address addr4 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, differentOwner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      differentOwner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address differentSigner = makeAddr("differentSigner");
@@ -268,10 +276,20 @@ contract MultipleDeployments is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address permitter1 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner1, authorizedCaller, bytes32(uint256(1))
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      owner1,
+      authorizedCaller,
+      bytes32(uint256(1))
     );
     address permitter2 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner2, authorizedCaller, bytes32(uint256(2))
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      owner2,
+      authorizedCaller,
+      bytes32(uint256(2))
     );
 
     vm.stopPrank();

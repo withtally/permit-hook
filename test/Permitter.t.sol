@@ -251,6 +251,31 @@ contract ValidateBidRevert is PermitterTest {
     permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
   }
 
+  function test_RevertIf_ExceedsGlobalMaxTokensPerBidder() public {
+    // Create a permit with a maxBidAmount higher than global maxTokensPerBidder
+    // This tests the check at line 130-131 in Permitter.sol
+    uint256 permitMax = MAX_TOKENS_PER_BIDDER + 500 ether; // Higher than global cap
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
+
+    // First bid that brings us close to the global cap
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 900 ether, 9 ether, permitData);
+
+    // Second bid that exceeds global maxTokensPerBidder (1000 ether) but not permit max
+    // This should revert with ExceedsPersonalCap using maxTokensPerBidder as the cap
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        IPermitter.ExceedsPersonalCap.selector,
+        200 ether, // requested
+        MAX_TOKENS_PER_BIDDER, // cap (global, not permit)
+        900 ether // already bid
+      )
+    );
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
+  }
+
   function test_RevertIf_ExceedsTotalEthCap() public {
     uint256 expiry = block.timestamp + 1 hours;
     bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
@@ -350,7 +375,9 @@ contract TimelockCapUpdates is PermitterTest {
     vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     // Should revert because cap is below totalEthRaised
-    vm.expectRevert(abi.encodeWithSelector(IPermitter.CapBelowCurrentAmount.selector, newCap, 50 ether));
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.CapBelowCurrentAmount.selector, newCap, 50 ether)
+    );
     vm.prank(owner);
     permitter.executeUpdateMaxTotalEth();
   }

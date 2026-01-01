@@ -42,7 +42,12 @@ contract IntegrationTest is Test {
     // Deploy a Permitter for a specific auction
     vm.prank(deployer);
     address permitterAddress = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, auctionOwner, authorizedCaller, AUCTION_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      auctionOwner,
+      authorizedCaller,
+      AUCTION_SALT
     );
     permitter = Permitter(permitterAddress);
   }
