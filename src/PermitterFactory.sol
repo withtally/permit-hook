@@ -15,6 +15,7 @@ contract PermitterFactory is IPermitterFactory {
     address trustedSigner,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder,
     address owner,
     address authorizedCaller,
     bytes32 salt
@@ -25,12 +26,18 @@ contract PermitterFactory is IPermitterFactory {
     // Deploy the Permitter using CREATE2
     permitter = address(
       new Permitter{salt: finalSalt}(
-        trustedSigner, maxTotalEth, maxTokensPerBidder, owner, authorizedCaller
+        trustedSigner, maxTotalEth, maxTokensPerBidder, minTokensPerBidder, owner, authorizedCaller
       )
     );
 
     emit PermitterCreated(
-      permitter, owner, trustedSigner, authorizedCaller, maxTotalEth, maxTokensPerBidder
+      permitter,
+      owner,
+      trustedSigner,
+      authorizedCaller,
+      maxTotalEth,
+      maxTokensPerBidder,
+      minTokensPerBidder
     );
   }
 
@@ -39,6 +46,7 @@ contract PermitterFactory is IPermitterFactory {
     address trustedSigner,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder,
     address owner,
     address authorizedCaller,
     bytes32 salt
@@ -49,7 +57,9 @@ contract PermitterFactory is IPermitterFactory {
     // Compute the init code hash
     bytes memory initCode = abi.encodePacked(
       type(Permitter).creationCode,
-      abi.encode(trustedSigner, maxTotalEth, maxTokensPerBidder, owner, authorizedCaller)
+      abi.encode(
+        trustedSigner, maxTotalEth, maxTokensPerBidder, minTokensPerBidder, owner, authorizedCaller
+      )
     );
     bytes32 initCodeHash = keccak256(initCode);
 

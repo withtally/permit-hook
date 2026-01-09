@@ -1,4 +1,7 @@
 {
+  ".claude/commands": {
+    "rev": "8d9bfb8d1b8c029d9984cada2fa834cece331469"
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.11.0",
