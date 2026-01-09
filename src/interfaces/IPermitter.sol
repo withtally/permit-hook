@@ -13,11 +13,9 @@ interface IPermitter {
 
   /// @notice The permit structure containing bidder authorization data.
   /// @param bidder Address authorized to bid.
-  /// @param maxBidAmount Maximum tokens this bidder can purchase (cumulative).
   /// @param expiry Timestamp when permit expires.
   struct Permit {
     address bidder;
-    uint256 maxBidAmount;
     uint256 expiry;
   }
 
@@ -45,6 +43,11 @@ interface IPermitter {
   /// @param cap The maximum total cap.
   /// @param alreadyRaised The amount already raised.
   error ExceedsTotalCap(uint256 requested, uint256 cap, uint256 alreadyRaised);
+
+  /// @notice Emitted when a bid is below the minimum amount.
+  /// @param bidAmount The bid amount that was attempted.
+  /// @param minRequired The minimum required bid amount.
+  error BidBelowMinimum(uint256 bidAmount, uint256 minRequired);
 
   /// @notice Emitted when the caller is not authorized.
   error Unauthorized();
@@ -193,6 +196,10 @@ interface IPermitter {
   /// @notice Get the maximum tokens per bidder cap.
   /// @return The maximum tokens per bidder cap.
   function maxTokensPerBidder() external view returns (uint256);
+
+  /// @notice Get the minimum tokens per bidder.
+  /// @return The minimum tokens per bidder.
+  function minTokensPerBidder() external view returns (uint256);
 
   /// @notice Get the owner address.
   /// @return The owner address.

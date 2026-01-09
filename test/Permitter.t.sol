@@ -20,10 +20,10 @@ contract PermitterTest is Test {
   // Default configuration
   uint256 public constant MAX_TOTAL_ETH = 100 ether;
   uint256 public constant MAX_TOKENS_PER_BIDDER = 1000 ether;
+  uint256 public constant MIN_TOKENS_PER_BIDDER = 10 ether;
 
   // EIP-712 constants
-  bytes32 public constant PERMIT_TYPEHASH =
-    keccak256("Permit(address bidder,uint256 maxBidAmount,uint256 expiry)");
+  bytes32 public constant PERMIT_TYPEHASH = keccak256("Permit(address bidder,uint256 expiry)");
 
   function setUp() public virtual {
     // Create a trusted signer with a known private key
@@ -31,32 +31,34 @@ contract PermitterTest is Test {
     trustedSigner = vm.addr(signerPrivateKey);
 
     // Deploy the Permitter with authorized caller
-    permitter =
-      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
+    permitter = new Permitter(
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller
+    );
   }
 
   /// @notice Helper function to create a valid permit signature.
-  function _createPermitSignature(address _bidder, uint256 _maxBidAmount, uint256 _expiry)
+  function _createPermitSignature(address _bidder, uint256 _expiry)
     internal
     view
     returns (bytes memory permitData)
   {
-    return _createPermitSignatureWithKey(_bidder, _maxBidAmount, _expiry, signerPrivateKey);
+    return _createPermitSignatureWithKey(_bidder, _expiry, signerPrivateKey);
   }
 
   /// @notice Helper function to create a permit signature with a specific private key.
-  function _createPermitSignatureWithKey(
-    address _bidder,
-    uint256 _maxBidAmount,
-    uint256 _expiry,
-    uint256 _privateKey
-  ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit = IPermitter.Permit({
-      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
-    });
+  function _createPermitSignatureWithKey(address _bidder, uint256 _expiry, uint256 _privateKey)
+    internal
+    view
+    returns (bytes memory permitData)
+  {
+    IPermitter.Permit memory permit = IPermitter.Permit({bidder: _bidder, expiry: _expiry});
 
-    bytes32 structHash =
-      keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
+    bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.expiry));
 
     bytes32 domainSeparator = permitter.domainSeparator();
     bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
@@ -74,6 +76,7 @@ contract Constructor is PermitterTest {
     assertEq(permitter.trustedSigner(), trustedSigner);
     assertEq(permitter.maxTotalEth(), MAX_TOTAL_ETH);
     assertEq(permitter.maxTokensPerBidder(), MAX_TOKENS_PER_BIDDER);
+    assertEq(permitter.minTokensPerBidder(), MIN_TOKENS_PER_BIDDER);
     assertEq(permitter.owner(), owner);
     assertEq(permitter.paused(), false);
     assertEq(permitter.totalEthRaised(), 0);
@@ -82,22 +85,39 @@ contract Constructor is PermitterTest {
 
   function test_RevertIf_TrustedSignerIsZero() public {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
-    new Permitter(address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
+    new Permitter(
+      address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, owner, authorizedCaller
+    );
   }
 
   function test_RevertIf_OwnerIsZero() public {
     vm.expectRevert(IPermitter.InvalidOwner.selector);
-    new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, address(0), authorizedCaller);
+    new Permitter(
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      address(0),
+      authorizedCaller
+    );
   }
 
   function test_RevertIf_MaxTotalEthIsZero() public {
     vm.expectRevert(IPermitter.InvalidCap.selector);
-    new Permitter(trustedSigner, 0, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
+    new Permitter(
+      trustedSigner, 0, MAX_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, owner, authorizedCaller
+    );
   }
 
   function test_RevertIf_MaxTokensPerBidderIsZero() public {
     vm.expectRevert(IPermitter.InvalidCap.selector);
-    new Permitter(trustedSigner, MAX_TOTAL_ETH, 0, owner, authorizedCaller);
+    new Permitter(trustedSigner, MAX_TOTAL_ETH, 0, MIN_TOKENS_PER_BIDDER, owner, authorizedCaller);
+  }
+
+  function test_AllowsZeroMinTokensPerBidder() public {
+    // minTokensPerBidder can be 0 (no minimum requirement)
+    Permitter p = new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
+    assertEq(p.minTokensPerBidder(), 0);
   }
 }
 
@@ -108,7 +128,7 @@ contract ValidateBidSuccess is PermitterTest {
     uint256 ethValue = 1 ether;
     uint256 expiry = block.timestamp + 1 hours;
 
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.prank(authorizedCaller);
     bool result = permitter.validateBid(bidder, bidAmount, ethValue, permitData);
@@ -120,7 +140,7 @@ contract ValidateBidSuccess is PermitterTest {
 
   function test_MultipleBidsFromSameBidder() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // First bid
     vm.prank(authorizedCaller);
@@ -142,8 +162,8 @@ contract ValidateBidSuccess is PermitterTest {
   function test_DifferentBiddersCanBid() public {
     uint256 expiry = block.timestamp + 1 hours;
 
-    bytes memory permitData1 = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
-    bytes memory permitData2 = _createPermitSignature(otherBidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData1 = _createPermitSignature(bidder, expiry);
+    bytes memory permitData2 = _createPermitSignature(otherBidder, expiry);
 
     vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData1);
@@ -159,7 +179,7 @@ contract ValidateBidSuccess is PermitterTest {
     uint256 bidAmount = 100 ether;
     uint256 ethValue = 1 ether;
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.expectEmit(true, false, false, true);
     emit IPermitter.PermitVerified(
@@ -175,7 +195,7 @@ contract ValidateBidSuccess is PermitterTest {
 contract ValidateBidRevert is PermitterTest {
   function test_RevertIf_CallerNotAuthorized() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // Try to call from non-authorized address
     vm.expectRevert(IPermitter.UnauthorizedCaller.selector);
@@ -184,7 +204,7 @@ contract ValidateBidRevert is PermitterTest {
 
   function test_RevertIf_Paused() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.prank(owner);
     permitter.pause();
@@ -194,9 +214,22 @@ contract ValidateBidRevert is PermitterTest {
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
+  function test_RevertIf_BidBelowMinimum() public {
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
+
+    // Try to bid less than minimum (MIN_TOKENS_PER_BIDDER = 10 ether)
+    uint256 lowBid = 5 ether;
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.BidBelowMinimum.selector, lowBid, MIN_TOKENS_PER_BIDDER)
+    );
+    vm.prank(authorizedCaller);
+    permitter.validateBid(bidder, lowBid, 0.05 ether, permitData);
+  }
+
   function test_RevertIf_SignatureExpired() public {
     uint256 expiry = block.timestamp - 1; // Already expired
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.SignatureExpired.selector, expiry, block.timestamp)
@@ -210,8 +243,7 @@ contract ValidateBidRevert is PermitterTest {
     address wrongSigner = vm.addr(wrongSignerKey);
     uint256 expiry = block.timestamp + 1 hours;
 
-    bytes memory permitData =
-      _createPermitSignatureWithKey(bidder, MAX_TOKENS_PER_BIDDER, expiry, wrongSignerKey);
+    bytes memory permitData = _createPermitSignatureWithKey(bidder, expiry, wrongSignerKey);
 
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, trustedSigner, wrongSigner)
@@ -223,7 +255,7 @@ contract ValidateBidRevert is PermitterTest {
   function test_RevertIf_BidderMismatch() public {
     uint256 expiry = block.timestamp + 1 hours;
     // Create permit for otherBidder but try to use it for bidder
-    bytes memory permitData = _createPermitSignature(otherBidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(otherBidder, expiry);
 
     vm.expectRevert(
       abi.encodeWithSelector(IPermitter.InvalidSignature.selector, bidder, otherBidder)
@@ -232,43 +264,20 @@ contract ValidateBidRevert is PermitterTest {
     permitter.validateBid(bidder, 100 ether, 1 ether, permitData);
   }
 
-  function test_RevertIf_ExceedsPermitMaxBidAmount() public {
-    uint256 permitMax = 500 ether;
+  function test_RevertIf_ExceedsMaxTokensPerBidder() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
-    // First bid succeeds
-    vm.prank(authorizedCaller);
-    permitter.validateBid(bidder, 400 ether, 4 ether, permitData);
-
-    // Second bid exceeds permit max
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        IPermitter.ExceedsPersonalCap.selector, 200 ether, permitMax, 400 ether
-      )
-    );
-    vm.prank(authorizedCaller);
-    permitter.validateBid(bidder, 200 ether, 2 ether, permitData);
-  }
-
-  function test_RevertIf_ExceedsGlobalMaxTokensPerBidder() public {
-    // Create a permit with a maxBidAmount higher than global maxTokensPerBidder
-    // This tests the check at line 130-131 in Permitter.sol
-    uint256 permitMax = MAX_TOKENS_PER_BIDDER + 500 ether; // Higher than global cap
-    uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
-
-    // First bid that brings us close to the global cap
+    // First bid that brings us close to the cap
     vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 900 ether, 9 ether, permitData);
 
-    // Second bid that exceeds global maxTokensPerBidder (1000 ether) but not permit max
-    // This should revert with ExceedsPersonalCap using maxTokensPerBidder as the cap
+    // Second bid that exceeds maxTokensPerBidder (1000 ether)
     vm.expectRevert(
       abi.encodeWithSelector(
         IPermitter.ExceedsPersonalCap.selector,
         200 ether, // requested
-        MAX_TOKENS_PER_BIDDER, // cap (global, not permit)
+        MAX_TOKENS_PER_BIDDER, // cap
         900 ether // already bid
       )
     );
@@ -278,7 +287,7 @@ contract ValidateBidRevert is PermitterTest {
 
   function test_RevertIf_ExceedsTotalEthCap() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // Bid that brings us close to the cap
     vm.prank(authorizedCaller);
@@ -289,7 +298,56 @@ contract ValidateBidRevert is PermitterTest {
       abi.encodeWithSelector(IPermitter.ExceedsTotalCap.selector, 2 ether, MAX_TOTAL_ETH, 99 ether)
     );
     vm.prank(authorizedCaller);
-    permitter.validateBid(bidder, 10 ether, 2 ether, permitData);
+    permitter.validateBid(bidder, 100 ether, 2 ether, permitData);
+  }
+}
+
+/// @notice Tests for minimum bid enforcement.
+contract MinTokensPerBidderTests is PermitterTest {
+  function test_BidAtExactMinimumSucceeds() public {
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
+
+    vm.prank(authorizedCaller);
+    bool result = permitter.validateBid(bidder, MIN_TOKENS_PER_BIDDER, 0.1 ether, permitData);
+
+    assertTrue(result);
+    assertEq(permitter.getBidAmount(bidder), MIN_TOKENS_PER_BIDDER);
+  }
+
+  function test_BidAboveMinimumSucceeds() public {
+    uint256 expiry = block.timestamp + 1 hours;
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
+
+    uint256 aboveMinBid = MIN_TOKENS_PER_BIDDER + 1 ether;
+    vm.prank(authorizedCaller);
+    bool result = permitter.validateBid(bidder, aboveMinBid, 0.11 ether, permitData);
+
+    assertTrue(result);
+    assertEq(permitter.getBidAmount(bidder), aboveMinBid);
+  }
+
+  function test_ZeroMinTokensPerBidderAllowsAnyBid() public {
+    // Deploy a new permitter with zero minimum
+    Permitter zeroMinPermitter = new Permitter(
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller
+    );
+
+    uint256 expiry = block.timestamp + 1 hours;
+    IPermitter.Permit memory permit = IPermitter.Permit({bidder: bidder, expiry: expiry});
+    bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.expiry));
+    bytes32 domainSeparator = zeroMinPermitter.domainSeparator();
+    bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, digest);
+    bytes memory signature = abi.encodePacked(r, s, v);
+    bytes memory permitData = abi.encode(permit, signature);
+
+    // Even a 1 wei bid should work
+    vm.prank(authorizedCaller);
+    bool result = zeroMinPermitter.validateBid(bidder, 1, 1, permitData);
+
+    assertTrue(result);
+    assertEq(zeroMinPermitter.getBidAmount(bidder), 1);
   }
 }
 
@@ -361,7 +419,7 @@ contract TimelockCapUpdates is PermitterTest {
   function test_RevertIf_NewCapBelowTotalRaised() public {
     // First, raise some ETH
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.prank(authorizedCaller);
     permitter.validateBid(bidder, 100 ether, 50 ether, permitData);
@@ -477,7 +535,7 @@ contract TimelockSignerUpdates is PermitterTest {
     uint256 expiry = block.timestamp + 2 hours;
 
     // Create a permit with the old signer
-    bytes memory oldPermitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory oldPermitData = _createPermitSignature(bidder, expiry);
 
     // Schedule rotation to new signer
     uint256 newSignerKey = 0x5678;
@@ -513,8 +571,7 @@ contract TimelockSignerUpdates is PermitterTest {
 
     // Create a permit with the new signer
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory newPermitData =
-      _createPermitSignatureWithKey(bidder, MAX_TOKENS_PER_BIDDER, expiry, newSignerKey);
+    bytes memory newPermitData = _createPermitSignatureWithKey(bidder, expiry, newSignerKey);
 
     // New permit should work
     vm.prank(authorizedCaller);
@@ -550,7 +607,7 @@ contract AuthorizedCallerTests is PermitterTest {
     permitter.updateAuthorizedCaller(newCaller);
 
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // New caller can validate
     vm.prank(newCaller);
@@ -569,7 +626,7 @@ contract AuthorizedCallerTests is PermitterTest {
     permitter.updateAuthorizedCaller(address(0));
 
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // Any caller will fail
     vm.expectRevert(IPermitter.UnauthorizedCaller.selector);
@@ -623,7 +680,7 @@ contract PauseTests is PermitterTest {
 contract ViewFunctions is PermitterTest {
   function test_GetBidAmount() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     assertEq(permitter.getBidAmount(bidder), 0);
 
@@ -638,8 +695,8 @@ contract ViewFunctions is PermitterTest {
 
   function test_GetTotalEthRaised() public {
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData1 = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
-    bytes memory permitData2 = _createPermitSignature(otherBidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData1 = _createPermitSignature(bidder, expiry);
+    bytes memory permitData2 = _createPermitSignature(otherBidder, expiry);
 
     assertEq(permitter.getTotalEthRaised(), 0);
 

@@ -20,6 +20,7 @@ contract PermitterFactoryTest is Test {
   // Default configuration
   uint256 public constant MAX_TOTAL_ETH = 100 ether;
   uint256 public constant MAX_TOKENS_PER_BIDDER = 1000 ether;
+  uint256 public constant MIN_TOKENS_PER_BIDDER = 10 ether;
   bytes32 public constant DEFAULT_SALT = bytes32(uint256(1));
 
   function setUp() public virtual {
@@ -32,7 +33,13 @@ contract CreatePermitter is PermitterFactoryTest {
   function test_DeploysPermitterWithCorrectParameters() public {
     vm.prank(deployer);
     address permitterAddress = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     Permitter permitter = Permitter(permitterAddress);
@@ -40,6 +47,7 @@ contract CreatePermitter is PermitterFactoryTest {
     assertEq(permitter.trustedSigner(), trustedSigner);
     assertEq(permitter.maxTotalEth(), MAX_TOTAL_ETH);
     assertEq(permitter.maxTokensPerBidder(), MAX_TOKENS_PER_BIDDER);
+    assertEq(permitter.minTokensPerBidder(), MIN_TOKENS_PER_BIDDER);
     assertEq(permitter.owner(), owner);
     assertEq(permitter.authorizedCaller(), authorizedCaller);
     assertEq(permitter.paused(), false);
@@ -58,11 +66,18 @@ contract CreatePermitter is PermitterFactoryTest {
       trustedSigner,
       authorizedCaller,
       MAX_TOTAL_ETH,
-      MAX_TOKENS_PER_BIDDER
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER
     );
 
     factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
   }
 
@@ -71,12 +86,24 @@ contract CreatePermitter is PermitterFactoryTest {
 
     vm.prank(deployer);
     address permitter1 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     vm.prank(deployer2);
     address permitter2 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     assertTrue(permitter1 != permitter2);
@@ -88,10 +115,22 @@ contract CreatePermitter is PermitterFactoryTest {
 
     vm.startPrank(deployer);
     address permitter1 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt1
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt1
     );
     address permitter2 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt2
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt2
     );
     vm.stopPrank();
 
@@ -102,7 +141,13 @@ contract CreatePermitter is PermitterFactoryTest {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
     vm.prank(deployer);
     factory.createPermitter(
-      address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      address(0),
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
   }
 
@@ -113,6 +158,7 @@ contract CreatePermitter is PermitterFactoryTest {
       trustedSigner,
       MAX_TOTAL_ETH,
       MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
       address(0),
       authorizedCaller,
       DEFAULT_SALT
@@ -123,14 +169,28 @@ contract CreatePermitter is PermitterFactoryTest {
     vm.expectRevert(IPermitter.InvalidCap.selector);
     vm.prank(deployer);
     factory.createPermitter(
-      trustedSigner, 0, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      0,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
   }
 
   function test_RevertIf_MaxTokensPerBidderIsZero() public {
     vm.expectRevert(IPermitter.InvalidCap.selector);
     vm.prank(deployer);
-    factory.createPermitter(trustedSigner, MAX_TOTAL_ETH, 0, owner, authorizedCaller, DEFAULT_SALT);
+    factory.createPermitter(
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      0,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
+    );
   }
 }
 
@@ -140,11 +200,23 @@ contract PredictPermitterAddress is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address predicted = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address actual = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     vm.stopPrank();
@@ -156,15 +228,33 @@ contract PredictPermitterAddress is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH + 1, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH + 1,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address addr3 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER + 1, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER + 1,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address differentOwner = makeAddr("differentOwner");
@@ -172,6 +262,7 @@ contract PredictPermitterAddress is PermitterFactoryTest {
       trustedSigner,
       MAX_TOTAL_ETH,
       MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
       differentOwner,
       authorizedCaller,
       DEFAULT_SALT
@@ -179,12 +270,34 @@ contract PredictPermitterAddress is PermitterFactoryTest {
 
     address differentSigner = makeAddr("differentSigner");
     address addr5 = factory.predictPermitterAddress(
-      differentSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      differentSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address differentCaller = makeAddr("differentCaller");
     address addr6 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, differentCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      differentCaller,
+      DEFAULT_SALT
+    );
+
+    address addr7 = factory.predictPermitterAddress(
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER + 1,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     vm.stopPrank();
@@ -195,6 +308,7 @@ contract PredictPermitterAddress is PermitterFactoryTest {
     assertTrue(addr1 != addr4);
     assertTrue(addr1 != addr5);
     assertTrue(addr1 != addr6);
+    assertTrue(addr1 != addr7);
     assertTrue(addr2 != addr3);
     assertTrue(addr2 != addr4);
     assertTrue(addr2 != addr5);
@@ -207,11 +321,23 @@ contract PredictPermitterAddress is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     vm.stopPrank();
@@ -224,12 +350,24 @@ contract PredictPermitterAddress is PermitterFactoryTest {
 
     vm.prank(deployer);
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     vm.prank(deployer2);
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      DEFAULT_SALT
     );
 
     assertTrue(addr1 != addr2);
@@ -245,12 +383,15 @@ contract MultipleDeployments is PermitterFactoryTest {
 
     vm.startPrank(deployer);
 
-    address permitter1 =
-      factory.createPermitter(trustedSigner, 50 ether, 500 ether, owner, authorizedCaller, salt1);
-    address permitter2 =
-      factory.createPermitter(trustedSigner, 100 ether, 1000 ether, owner, authorizedCaller, salt2);
-    address permitter3 =
-      factory.createPermitter(trustedSigner, 200 ether, 2000 ether, owner, authorizedCaller, salt3);
+    address permitter1 = factory.createPermitter(
+      trustedSigner, 50 ether, 500 ether, 5 ether, owner, authorizedCaller, salt1
+    );
+    address permitter2 = factory.createPermitter(
+      trustedSigner, 100 ether, 1000 ether, 10 ether, owner, authorizedCaller, salt2
+    );
+    address permitter3 = factory.createPermitter(
+      trustedSigner, 200 ether, 2000 ether, 20 ether, owner, authorizedCaller, salt3
+    );
 
     vm.stopPrank();
 
@@ -267,6 +408,10 @@ contract MultipleDeployments is PermitterFactoryTest {
     assertEq(Permitter(permitter1).maxTokensPerBidder(), 500 ether);
     assertEq(Permitter(permitter2).maxTokensPerBidder(), 1000 ether);
     assertEq(Permitter(permitter3).maxTokensPerBidder(), 2000 ether);
+
+    assertEq(Permitter(permitter1).minTokensPerBidder(), 5 ether);
+    assertEq(Permitter(permitter2).minTokensPerBidder(), 10 ether);
+    assertEq(Permitter(permitter3).minTokensPerBidder(), 20 ether);
   }
 
   function test_DeployPermittersWithDifferentOwners() public {
@@ -279,6 +424,7 @@ contract MultipleDeployments is PermitterFactoryTest {
       trustedSigner,
       MAX_TOTAL_ETH,
       MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
       owner1,
       authorizedCaller,
       bytes32(uint256(1))
@@ -287,6 +433,7 @@ contract MultipleDeployments is PermitterFactoryTest {
       trustedSigner,
       MAX_TOTAL_ETH,
       MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
       owner2,
       authorizedCaller,
       bytes32(uint256(2))
@@ -314,10 +461,22 @@ contract MultipleDeployments is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address permitter1 = factory.createPermitter(
-      signer1, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, bytes32(uint256(1))
+      signer1,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      bytes32(uint256(1))
     );
     address permitter2 = factory.createPermitter(
-      signer2, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, bytes32(uint256(2))
+      signer2,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      bytes32(uint256(2))
     );
 
     vm.stopPrank();
@@ -333,10 +492,22 @@ contract MultipleDeployments is PermitterFactoryTest {
     vm.startPrank(deployer);
 
     address permitter1 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, caller1, bytes32(uint256(1))
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      caller1,
+      bytes32(uint256(1))
     );
     address permitter2 = factory.createPermitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, caller2, bytes32(uint256(2))
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      caller2,
+      bytes32(uint256(2))
     );
 
     vm.stopPrank();
