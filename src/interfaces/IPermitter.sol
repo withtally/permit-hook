@@ -61,6 +61,11 @@ interface IPermitter {
   /// @notice Emitted when a cap value is invalid (zero).
   error InvalidCap();
 
+  /// @notice Emitted when minTokensPerBidder exceeds maxTokensPerBidder.
+  /// @param minTokens The minimum tokens per bidder.
+  /// @param maxTokens The maximum tokens per bidder.
+  error MinTokensExceedsMaxTokens(uint256 minTokens, uint256 maxTokens);
+
   /// @notice Emitted when proposed cap is below current amount.
   /// @param proposed The proposed new cap.
   /// @param current The current amount that would exceed the cap.

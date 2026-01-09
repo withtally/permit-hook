@@ -87,6 +87,9 @@ contract Permitter is IPermitter, EIP712 {
     if (_owner == address(0)) revert InvalidOwner();
     if (_maxTotalEth == 0) revert InvalidCap();
     if (_maxTokensPerBidder == 0) revert InvalidCap();
+    if (_minTokensPerBidder > _maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(_minTokensPerBidder, _maxTokensPerBidder);
+    }
 
     trustedSigner = _trustedSigner;
     maxTotalEth = _maxTotalEth;

@@ -119,6 +119,23 @@ contract Constructor is PermitterTest {
     Permitter p = new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
     assertEq(p.minTokensPerBidder(), 0);
   }
+
+  function test_RevertIf_MinTokensExceedsMaxTokens() public {
+    uint256 minTokens = 2000 ether;
+    uint256 maxTokens = 1000 ether;
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.MinTokensExceedsMaxTokens.selector, minTokens, maxTokens)
+    );
+    new Permitter(trustedSigner, MAX_TOTAL_ETH, maxTokens, minTokens, owner, authorizedCaller);
+  }
+
+  function test_AllowsMinTokensEqualToMaxTokens() public {
+    uint256 equalTokens = 500 ether;
+    Permitter p =
+      new Permitter(trustedSigner, MAX_TOTAL_ETH, equalTokens, equalTokens, owner, authorizedCaller);
+    assertEq(p.minTokensPerBidder(), equalTokens);
+    assertEq(p.maxTokensPerBidder(), equalTokens);
+  }
 }
 
 /// @notice Tests for validateBid with valid permits.
