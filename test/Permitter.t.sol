@@ -490,7 +490,9 @@ contract TimelockCapUpdates is PermitterTest {
     vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, false, false, true);
-    emit IPermitter.CapUpdated(IPermitter.CapType.MAX_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER, newCap);
+    emit IPermitter.CapUpdated(
+      IPermitter.CapType.MAX_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER, newCap
+    );
 
     vm.prank(owner);
     permitter.executeUpdateMaxTokensPerBidder();
@@ -562,7 +564,9 @@ contract TimelockMinTokensUpdates is PermitterTest {
     vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, false, false, true);
-    emit IPermitter.CapUpdated(IPermitter.CapType.MIN_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, newMin);
+    emit IPermitter.CapUpdated(
+      IPermitter.CapType.MIN_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, newMin
+    );
 
     vm.prank(owner);
     permitter.executeUpdateMinTokensPerBidder();
