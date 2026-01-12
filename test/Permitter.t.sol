@@ -86,7 +86,12 @@ contract Constructor is PermitterTest {
   function test_RevertIf_TrustedSignerIsZero() public {
     vm.expectRevert(IPermitter.InvalidTrustedSigner.selector);
     new Permitter(
-      address(0), MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, owner, authorizedCaller
+      address(0),
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller
     );
   }
 
@@ -116,7 +121,8 @@ contract Constructor is PermitterTest {
 
   function test_AllowsZeroMinTokensPerBidder() public {
     // minTokensPerBidder can be 0 (no minimum requirement)
-    Permitter p = new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
+    Permitter p =
+      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
     assertEq(p.minTokensPerBidder(), 0);
   }
 
@@ -346,9 +352,8 @@ contract MinTokensPerBidderTests is PermitterTest {
 
   function test_ZeroMinTokensPerBidderAllowsAnyBid() public {
     // Deploy a new permitter with zero minimum
-    Permitter zeroMinPermitter = new Permitter(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller
-    );
+    Permitter zeroMinPermitter =
+      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
 
     uint256 expiry = block.timestamp + 1 hours;
     IPermitter.Permit memory permit = IPermitter.Permit({bidder: bidder, expiry: expiry});

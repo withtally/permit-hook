@@ -183,13 +183,7 @@ contract CreatePermitter is PermitterFactoryTest {
     vm.expectRevert(IPermitter.InvalidCap.selector);
     vm.prank(deployer);
     factory.createPermitter(
-      trustedSigner,
-      MAX_TOTAL_ETH,
-      0,
-      MIN_TOKENS_PER_BIDDER,
-      owner,
-      authorizedCaller,
-      DEFAULT_SALT
+      trustedSigner, MAX_TOTAL_ETH, 0, MIN_TOKENS_PER_BIDDER, owner, authorizedCaller, DEFAULT_SALT
     );
   }
 }

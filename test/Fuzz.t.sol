@@ -270,9 +270,7 @@ contract OwnerFunctionsFuzz is FuzzTest {
   }
 
   /// @notice Fuzz test that non-owners cannot schedule per-bidder cap updates.
-  function testFuzz_NonOwnerCannotScheduleMaxTokensPerBidder(address caller, uint256 newCap)
-    public
-  {
+  function testFuzz_NonOwnerCannotScheduleMaxTokensPerBidder(address caller, uint256 newCap) public {
     vm.assume(caller != owner);
     vm.assume(newCap > 0); // Must be > 0 for valid cap
 

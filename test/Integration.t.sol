@@ -235,8 +235,7 @@ contract EmergencyScenarios is IntegrationTest {
     permitter.validateBid(bidder1, 100 ether, 1 ether, permit);
 
     // Create a new permit with the new signer
-    IPermitter.Permit memory newPermitStruct =
-      IPermitter.Permit({bidder: bidder1, expiry: expiry});
+    IPermitter.Permit memory newPermitStruct = IPermitter.Permit({bidder: bidder1, expiry: expiry});
 
     bytes32 structHash =
       keccak256(abi.encode(PERMIT_TYPEHASH, newPermitStruct.bidder, newPermitStruct.expiry));
@@ -397,10 +396,22 @@ contract MultipleAuctions is IntegrationTest {
     // Deploy additional permitters for different auctions
     vm.startPrank(deployer);
     address permitter2Address = factory.createPermitter(
-      trustedSigner, 50 ether, 500 ether, 5 ether, auctionOwner, authorizedCaller2, bytes32(uint256(2))
+      trustedSigner,
+      50 ether,
+      500 ether,
+      5 ether,
+      auctionOwner,
+      authorizedCaller2,
+      bytes32(uint256(2))
     );
     address permitter3Address = factory.createPermitter(
-      trustedSigner, 200 ether, 2000 ether, 20 ether, auctionOwner, authorizedCaller3, bytes32(uint256(3))
+      trustedSigner,
+      200 ether,
+      2000 ether,
+      20 ether,
+      auctionOwner,
+      authorizedCaller3,
+      bytes32(uint256(3))
     );
     vm.stopPrank();
 

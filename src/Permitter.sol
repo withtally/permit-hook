@@ -113,17 +113,13 @@ contract Permitter is IPermitter, EIP712 {
     if (paused) revert ContractPaused();
 
     // 2. CHEAP: Check minimum bid amount
-    if (bidAmount < minTokensPerBidder) {
-      revert BidBelowMinimum(bidAmount, minTokensPerBidder);
-    }
+    if (bidAmount < minTokensPerBidder) revert BidBelowMinimum(bidAmount, minTokensPerBidder);
 
     // 3. Decode permit data
     (Permit memory permit, bytes memory signature) = abi.decode(permitData, (Permit, bytes));
 
     // 4. CHEAP: Check time window
-    if (block.timestamp > permit.expiry) {
-      revert SignatureExpired(permit.expiry, block.timestamp);
-    }
+    if (block.timestamp > permit.expiry) revert SignatureExpired(permit.expiry, block.timestamp);
 
     // 5. MODERATE: Verify EIP-712 signature
     address recovered = _recoverSigner(permit, signature);
