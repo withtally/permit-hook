@@ -471,7 +471,7 @@ contract TimelockCapUpdates is PermitterTest {
 
     vm.expectEmit(true, false, false, true);
     emit IPermitter.CapUpdateScheduled(
-      IPermitter.CapType.TOKENS_PER_BIDDER, newCap, expectedExecuteTime
+      IPermitter.CapType.MAX_TOKENS_PER_BIDDER, newCap, expectedExecuteTime
     );
 
     vm.prank(owner);
@@ -490,12 +490,155 @@ contract TimelockCapUpdates is PermitterTest {
     vm.warp(block.timestamp + permitter.UPDATE_DELAY());
 
     vm.expectEmit(true, false, false, true);
-    emit IPermitter.CapUpdated(IPermitter.CapType.TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER, newCap);
+    emit IPermitter.CapUpdated(IPermitter.CapType.MAX_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER, newCap);
 
     vm.prank(owner);
     permitter.executeUpdateMaxTokensPerBidder();
 
     assertEq(permitter.maxTokensPerBidder(), newCap);
+  }
+}
+
+/// @notice Tests for timelock-based min tokens per bidder updates.
+contract TimelockMinTokensUpdates is PermitterTest {
+  function test_ScheduleUpdateMinTokensPerBidder() public {
+    uint256 newMin = 5 ether;
+    uint256 expectedExecuteTime = block.timestamp + permitter.UPDATE_DELAY();
+
+    vm.expectEmit(true, false, false, true);
+    emit IPermitter.CapUpdateScheduled(
+      IPermitter.CapType.MIN_TOKENS_PER_BIDDER, newMin, expectedExecuteTime
+    );
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    assertEq(permitter.pendingMinTokensPerBidder(), newMin);
+    assertEq(permitter.pendingMinTokensPerBidderTime(), expectedExecuteTime);
+    // Original min unchanged
+    assertEq(permitter.minTokensPerBidder(), MIN_TOKENS_PER_BIDDER);
+  }
+
+  function test_RevertIf_ScheduleUpdateMinTokensPerBidderExceedsMax() public {
+    uint256 newMin = MAX_TOKENS_PER_BIDDER + 1;
+
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        IPermitter.MinTokensExceedsMaxTokens.selector, newMin, MAX_TOKENS_PER_BIDDER
+      )
+    );
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+  }
+
+  function test_RevertIf_ExecuteUpdateMinTokensPerBidderTooEarly() public {
+    uint256 newMin = 5 ether;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    // Try to execute immediately
+    uint256 scheduledTime = permitter.pendingMinTokensPerBidderTime();
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.UpdateTooEarly.selector, scheduledTime, block.timestamp)
+    );
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+  }
+
+  function test_RevertIf_ExecuteUpdateMinTokensPerBidderNotScheduled() public {
+    vm.expectRevert(IPermitter.UpdateNotScheduled.selector);
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+  }
+
+  function test_ExecuteUpdateMinTokensPerBidder_AfterDelay() public {
+    uint256 newMin = 5 ether;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    // Fast forward past the delay
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    vm.expectEmit(true, false, false, true);
+    emit IPermitter.CapUpdated(IPermitter.CapType.MIN_TOKENS_PER_BIDDER, MIN_TOKENS_PER_BIDDER, newMin);
+
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+
+    assertEq(permitter.minTokensPerBidder(), newMin);
+    assertEq(permitter.pendingMinTokensPerBidder(), 0);
+    assertEq(permitter.pendingMinTokensPerBidderTime(), 0);
+  }
+
+  function test_AllowsSettingMinTokensToZero() public {
+    uint256 newMin = 0;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+
+    assertEq(permitter.minTokensPerBidder(), 0);
+  }
+
+  function test_AllowsSettingMinTokensEqualToMax() public {
+    uint256 newMin = MAX_TOKENS_PER_BIDDER;
+
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+
+    assertEq(permitter.minTokensPerBidder(), MAX_TOKENS_PER_BIDDER);
+  }
+
+  function test_RevertIf_ExecuteMinTokensExceedsMaxAfterMaxReduced() public {
+    // Schedule a min tokens update that's valid now
+    uint256 newMin = 500 ether;
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(newMin);
+
+    // Schedule and execute a max tokens reduction
+    uint256 newMax = 400 ether;
+    vm.prank(owner);
+    permitter.scheduleUpdateMaxTokensPerBidder(newMax);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    vm.prank(owner);
+    permitter.executeUpdateMaxTokensPerBidder();
+
+    // Now try to execute the min update - should fail because min > new max
+    vm.expectRevert(
+      abi.encodeWithSelector(IPermitter.MinTokensExceedsMaxTokens.selector, newMin, newMax)
+    );
+    vm.prank(owner);
+    permitter.executeUpdateMinTokensPerBidder();
+  }
+
+  function test_RevertIf_ScheduleMinTokensByNonOwner() public {
+    vm.expectRevert(IPermitter.Unauthorized.selector);
+    vm.prank(bidder);
+    permitter.scheduleUpdateMinTokensPerBidder(5 ether);
+  }
+
+  function test_RevertIf_ExecuteMinTokensByNonOwner() public {
+    vm.prank(owner);
+    permitter.scheduleUpdateMinTokensPerBidder(5 ether);
+
+    vm.warp(block.timestamp + permitter.UPDATE_DELAY());
+
+    vm.expectRevert(IPermitter.Unauthorized.selector);
+    vm.prank(bidder);
+    permitter.executeUpdateMinTokensPerBidder();
   }
 }
 

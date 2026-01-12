@@ -8,7 +8,8 @@ interface IPermitter {
   /// @notice Enum for cap types used in events.
   enum CapType {
     TOTAL_ETH,
-    TOKENS_PER_BIDDER
+    MAX_TOKENS_PER_BIDDER,
+    MIN_TOKENS_PER_BIDDER
   }
 
   /// @notice The permit structure containing bidder authorization data.
@@ -161,6 +162,15 @@ interface IPermitter {
   /// @dev Reverts if no update is scheduled or delay hasn't passed.
   function executeUpdateMaxTokensPerBidder() external;
 
+  /// @notice Schedule an update to the minimum tokens per bidder (owner only).
+  /// @dev Update will be executable after UPDATE_DELAY has passed.
+  /// @param newMinTokensPerBidder New minimum tokens per bidder.
+  function scheduleUpdateMinTokensPerBidder(uint256 newMinTokensPerBidder) external;
+
+  /// @notice Execute a scheduled update to the minimum tokens per bidder (owner only).
+  /// @dev Reverts if no update is scheduled or delay hasn't passed.
+  function executeUpdateMinTokensPerBidder() external;
+
   /// @notice Schedule an update to the trusted signer address (owner only).
   /// @dev Update will be executable after UPDATE_DELAY has passed.
   /// @param newSigner New trusted signer address.
@@ -237,6 +247,14 @@ interface IPermitter {
   /// @notice Get the time when pending max tokens per bidder update can be executed.
   /// @return The timestamp.
   function pendingMaxTokensPerBidderTime() external view returns (uint256);
+
+  /// @notice Get the pending min tokens per bidder update.
+  /// @return The pending value.
+  function pendingMinTokensPerBidder() external view returns (uint256);
+
+  /// @notice Get the time when pending min tokens per bidder update can be executed.
+  /// @return The timestamp.
+  function pendingMinTokensPerBidderTime() external view returns (uint256);
 
   /// @notice Get the pending trusted signer update.
   /// @return The pending address.

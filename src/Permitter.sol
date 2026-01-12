@@ -56,6 +56,12 @@ contract Permitter is IPermitter, EIP712 {
   /// @notice Time when pending maxTokensPerBidder update can be executed.
   uint256 public pendingMaxTokensPerBidderTime;
 
+  /// @notice Pending minTokensPerBidder update value.
+  uint256 public pendingMinTokensPerBidder;
+
+  /// @notice Time when pending minTokensPerBidder update can be executed.
+  uint256 public pendingMinTokensPerBidderTime;
+
   /// @notice Pending trustedSigner update address.
   address public pendingTrustedSigner;
 
@@ -191,7 +197,7 @@ contract Permitter is IPermitter, EIP712 {
     pendingMaxTokensPerBidder = newMaxTokensPerBidder;
     pendingMaxTokensPerBidderTime = executeTime;
 
-    emit CapUpdateScheduled(CapType.TOKENS_PER_BIDDER, newMaxTokensPerBidder, executeTime);
+    emit CapUpdateScheduled(CapType.MAX_TOKENS_PER_BIDDER, newMaxTokensPerBidder, executeTime);
   }
 
   /// @inheritdoc IPermitter
@@ -208,7 +214,40 @@ contract Permitter is IPermitter, EIP712 {
     pendingMaxTokensPerBidder = 0;
     pendingMaxTokensPerBidderTime = 0;
 
-    emit CapUpdated(CapType.TOKENS_PER_BIDDER, oldCap, maxTokensPerBidder);
+    emit CapUpdated(CapType.MAX_TOKENS_PER_BIDDER, oldCap, maxTokensPerBidder);
+  }
+
+  /// @inheritdoc IPermitter
+  function scheduleUpdateMinTokensPerBidder(uint256 newMinTokensPerBidder) external onlyOwner {
+    if (newMinTokensPerBidder > maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(newMinTokensPerBidder, maxTokensPerBidder);
+    }
+
+    uint256 executeTime = block.timestamp + UPDATE_DELAY;
+    pendingMinTokensPerBidder = newMinTokensPerBidder;
+    pendingMinTokensPerBidderTime = executeTime;
+
+    emit CapUpdateScheduled(CapType.MIN_TOKENS_PER_BIDDER, newMinTokensPerBidder, executeTime);
+  }
+
+  /// @inheritdoc IPermitter
+  function executeUpdateMinTokensPerBidder() external onlyOwner {
+    if (pendingMinTokensPerBidderTime == 0) revert UpdateNotScheduled();
+    if (block.timestamp < pendingMinTokensPerBidderTime) {
+      revert UpdateTooEarly(pendingMinTokensPerBidderTime, block.timestamp);
+    }
+    if (pendingMinTokensPerBidder > maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(pendingMinTokensPerBidder, maxTokensPerBidder);
+    }
+
+    uint256 oldMin = minTokensPerBidder;
+    minTokensPerBidder = pendingMinTokensPerBidder;
+
+    // Clear pending update
+    pendingMinTokensPerBidder = 0;
+    pendingMinTokensPerBidderTime = 0;
+
+    emit CapUpdated(CapType.MIN_TOKENS_PER_BIDDER, oldMin, minTokensPerBidder);
   }
 
   /// @inheritdoc IPermitter
