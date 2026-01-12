@@ -347,6 +347,7 @@ contract FactoryFuzz is FuzzTest {
     // Bound to valid non-zero caps
     maxTotalEth = bound(maxTotalEth, 1, type(uint256).max);
     maxTokensPerBidder = bound(maxTokensPerBidder, 1, type(uint256).max);
+    minTokensPerBidder = bound(minTokensPerBidder, 0, maxTokensPerBidder);
 
     vm.startPrank(deployer);
 
