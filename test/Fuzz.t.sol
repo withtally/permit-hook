@@ -157,8 +157,9 @@ contract CapEnforcementFuzz is FuzzTest {
 
     for (uint256 i = 0; i < numBids; i++) {
       // Generate deterministic random bid amounts from seed, at least MIN_TOKENS_PER_BIDDER
-      uint256 bidAmount =
-        bound(uint256(keccak256(abi.encode(seed, i))), MIN_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER);
+      uint256 bidAmount = bound(
+        uint256(keccak256(abi.encode(seed, i))), MIN_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER
+      );
 
       if (totalBid + bidAmount <= MAX_TOKENS_PER_BIDDER) {
         // Bid should succeed
@@ -270,7 +271,9 @@ contract OwnerFunctionsFuzz is FuzzTest {
   }
 
   /// @notice Fuzz test that non-owners cannot schedule per-bidder cap updates.
-  function testFuzz_NonOwnerCannotScheduleMaxTokensPerBidder(address caller, uint256 newCap) public {
+  function testFuzz_NonOwnerCannotScheduleMaxTokensPerBidder(address caller, uint256 newCap)
+    public
+  {
     vm.assume(caller != owner);
     vm.assume(newCap > 0); // Must be > 0 for valid cap
 

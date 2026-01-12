@@ -121,8 +121,9 @@ contract Constructor is PermitterTest {
 
   function test_AllowsZeroMinTokensPerBidder() public {
     // minTokensPerBidder can be 0 (no minimum requirement)
-    Permitter p =
-      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
+    Permitter p = new Permitter(
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller
+    );
     assertEq(p.minTokensPerBidder(), 0);
   }
 
@@ -137,8 +138,9 @@ contract Constructor is PermitterTest {
 
   function test_AllowsMinTokensEqualToMaxTokens() public {
     uint256 equalTokens = 500 ether;
-    Permitter p =
-      new Permitter(trustedSigner, MAX_TOTAL_ETH, equalTokens, equalTokens, owner, authorizedCaller);
+    Permitter p = new Permitter(
+      trustedSigner, MAX_TOTAL_ETH, equalTokens, equalTokens, owner, authorizedCaller
+    );
     assertEq(p.minTokensPerBidder(), equalTokens);
     assertEq(p.maxTokensPerBidder(), equalTokens);
   }
@@ -352,8 +354,9 @@ contract MinTokensPerBidderTests is PermitterTest {
 
   function test_ZeroMinTokensPerBidderAllowsAnyBid() public {
     // Deploy a new permitter with zero minimum
-    Permitter zeroMinPermitter =
-      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller);
+    Permitter zeroMinPermitter = new Permitter(
+      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, 0, owner, authorizedCaller
+    );
 
     uint256 expiry = block.timestamp + 1 hours;
     IPermitter.Permit memory permit = IPermitter.Permit({bidder: bidder, expiry: expiry});
