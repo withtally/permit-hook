@@ -12,19 +12,22 @@ interface IPermitterFactory {
   /// @param authorizedCaller The CCA contract authorized to call validateBid.
   /// @param maxTotalEth The maximum total ETH that can be raised.
   /// @param maxTokensPerBidder The maximum tokens any single bidder can purchase.
+  /// @param minTokensPerBidder The minimum tokens any single bidder must purchase per bid.
   event PermitterCreated(
     address indexed permitter,
     address indexed owner,
     address indexed trustedSigner,
     address authorizedCaller,
     uint256 maxTotalEth,
-    uint256 maxTokensPerBidder
+    uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder
   );
 
   /// @notice Create a new Permitter instance for an auction.
   /// @param trustedSigner Address authorized to sign permits (Tally backend).
   /// @param maxTotalEth Maximum total ETH that can be raised in the auction.
   /// @param maxTokensPerBidder Maximum tokens any single bidder can purchase.
+  /// @param minTokensPerBidder Minimum tokens any single bidder must purchase per bid.
   /// @param owner Address that can update caps and pause (auction creator).
   /// @param authorizedCaller CCA contract address authorized to call validateBid.
   /// @param salt Salt for CREATE2 deployment to enable deterministic addresses.
@@ -33,6 +36,7 @@ interface IPermitterFactory {
     address trustedSigner,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder,
     address owner,
     address authorizedCaller,
     bytes32 salt
@@ -42,6 +46,7 @@ interface IPermitterFactory {
   /// @param trustedSigner Address authorized to sign permits.
   /// @param maxTotalEth Maximum total ETH that can be raised.
   /// @param maxTokensPerBidder Maximum tokens any single bidder can purchase.
+  /// @param minTokensPerBidder Minimum tokens any single bidder must purchase per bid.
   /// @param owner Address that can update caps and pause.
   /// @param authorizedCaller CCA contract address authorized to call validateBid.
   /// @param salt Salt for CREATE2 deployment.
@@ -50,6 +55,7 @@ interface IPermitterFactory {
     address trustedSigner,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder,
     address owner,
     address authorizedCaller,
     bytes32 salt

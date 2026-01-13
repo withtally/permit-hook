@@ -18,29 +18,33 @@ contract FuzzTest is Test {
 
   uint256 public constant MAX_TOTAL_ETH = 100 ether;
   uint256 public constant MAX_TOKENS_PER_BIDDER = 1000 ether;
+  uint256 public constant MIN_TOKENS_PER_BIDDER = 10 ether;
 
-  bytes32 public constant PERMIT_TYPEHASH =
-    keccak256("Permit(address bidder,uint256 maxBidAmount,uint256 expiry)");
+  bytes32 public constant PERMIT_TYPEHASH = keccak256("Permit(address bidder,uint256 expiry)");
 
   function setUp() public {
     signerPrivateKey = 0x1234;
     trustedSigner = vm.addr(signerPrivateKey);
 
     factory = new PermitterFactory();
-    permitter =
-      new Permitter(trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller);
+    permitter = new Permitter(
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller
+    );
   }
 
-  function _createPermitSignature(address _bidder, uint256 _maxBidAmount, uint256 _expiry)
+  function _createPermitSignature(address _bidder, uint256 _expiry)
     internal
     view
     returns (bytes memory permitData)
   {
-    IPermitter.Permit memory permit =
-      IPermitter.Permit({bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry});
+    IPermitter.Permit memory permit = IPermitter.Permit({bidder: _bidder, expiry: _expiry});
 
-    bytes32 structHash =
-      keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
+    bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.expiry));
 
     bytes32 domainSeparator = permitter.domainSeparator();
     bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
@@ -51,18 +55,14 @@ contract FuzzTest is Test {
     permitData = abi.encode(permit, signature);
   }
 
-  function _createPermitSignatureWithKey(
-    address _bidder,
-    uint256 _maxBidAmount,
-    uint256 _expiry,
-    uint256 _privateKey
-  ) internal view returns (bytes memory permitData) {
-    IPermitter.Permit memory permit = IPermitter.Permit({
-      bidder: _bidder, maxBidAmount: _maxBidAmount, expiry: _expiry
-    });
+  function _createPermitSignatureWithKey(address _bidder, uint256 _expiry, uint256 _privateKey)
+    internal
+    view
+    returns (bytes memory permitData)
+  {
+    IPermitter.Permit memory permit = IPermitter.Permit({bidder: _bidder, expiry: _expiry});
 
-    bytes32 structHash =
-      keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
+    bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.expiry));
 
     bytes32 domainSeparator = permitter.domainSeparator();
     bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
@@ -84,12 +84,11 @@ contract SignatureVerificationFuzz is FuzzTest {
     bytes memory randomSignature
   ) public {
     vm.assume(bidder != address(0));
-    vm.assume(bidAmount > 0 && bidAmount <= MAX_TOKENS_PER_BIDDER);
+    vm.assume(bidAmount >= MIN_TOKENS_PER_BIDDER && bidAmount <= MAX_TOKENS_PER_BIDDER);
     vm.assume(expiry > block.timestamp);
 
     // Create a permit struct without a valid signature
-    IPermitter.Permit memory permit =
-      IPermitter.Permit({bidder: bidder, maxBidAmount: MAX_TOKENS_PER_BIDDER, expiry: expiry});
+    IPermitter.Permit memory permit = IPermitter.Permit({bidder: bidder, expiry: expiry});
 
     bytes memory permitData = abi.encode(permit, randomSignature);
 
@@ -107,8 +106,7 @@ contract SignatureVerificationFuzz is FuzzTest {
     vm.assume(vm.addr(wrongSignerKey) != trustedSigner);
 
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData =
-      _createPermitSignatureWithKey(bidder, MAX_TOKENS_PER_BIDDER, expiry, wrongSignerKey);
+    bytes memory permitData = _createPermitSignatureWithKey(bidder, expiry, wrongSignerKey);
 
     address recoveredSigner = vm.addr(wrongSignerKey);
 
@@ -127,12 +125,12 @@ contract SignatureVerificationFuzz is FuzzTest {
     uint256 expiryOffset
   ) public {
     vm.assume(bidder != address(0));
-    vm.assume(bidAmount > 0 && bidAmount <= MAX_TOKENS_PER_BIDDER);
-    vm.assume(ethValue > 0 && ethValue <= MAX_TOTAL_ETH);
-    vm.assume(expiryOffset > 0 && expiryOffset < 365 days);
+    bidAmount = bound(bidAmount, MIN_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER);
+    ethValue = bound(ethValue, 1, MAX_TOTAL_ETH);
+    expiryOffset = bound(expiryOffset, 1, 365 days - 1);
 
     uint256 expiry = block.timestamp + expiryOffset;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     vm.prank(authorizedCaller);
     bool result = permitter.validateBid(bidder, bidAmount, ethValue, permitData);
@@ -145,26 +143,25 @@ contract SignatureVerificationFuzz is FuzzTest {
 
 /// @notice Fuzz tests for cap enforcement.
 contract CapEnforcementFuzz is FuzzTest {
-  /// @notice Fuzz test that cumulative bids never exceed permit max.
-  function testFuzz_CumulativeBidsNeverExceedPermitMax(
-    uint256 permitMax,
-    uint256 numBids,
-    uint256 seed
-  ) public {
-    permitMax = bound(permitMax, 1, MAX_TOKENS_PER_BIDDER);
+  /// @notice Fuzz test that cumulative bids never exceed maxTokensPerBidder.
+  function testFuzz_CumulativeBidsNeverExceedMaxTokensPerBidder(uint256 numBids, uint256 seed)
+    public
+  {
     numBids = bound(numBids, 1, 10);
 
     address bidder = makeAddr("fuzzBidder");
     uint256 expiry = block.timestamp + 1 hours;
-    bytes memory permitData = _createPermitSignature(bidder, permitMax, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     uint256 totalBid = 0;
 
     for (uint256 i = 0; i < numBids; i++) {
-      // Generate deterministic random bid amounts from seed
-      uint256 bidAmount = bound(uint256(keccak256(abi.encode(seed, i))), 1, permitMax);
+      // Generate deterministic random bid amounts from seed, at least MIN_TOKENS_PER_BIDDER
+      uint256 bidAmount = bound(
+        uint256(keccak256(abi.encode(seed, i))), MIN_TOKENS_PER_BIDDER, MAX_TOKENS_PER_BIDDER
+      );
 
-      if (totalBid + bidAmount <= permitMax) {
+      if (totalBid + bidAmount <= MAX_TOKENS_PER_BIDDER) {
         // Bid should succeed
         vm.prank(authorizedCaller);
         permitter.validateBid(bidder, bidAmount, 0, permitData);
@@ -174,7 +171,7 @@ contract CapEnforcementFuzz is FuzzTest {
         // Bid should fail
         vm.expectRevert(
           abi.encodeWithSelector(
-            IPermitter.ExceedsPersonalCap.selector, bidAmount, permitMax, totalBid
+            IPermitter.ExceedsPersonalCap.selector, bidAmount, MAX_TOKENS_PER_BIDDER, totalBid
           )
         );
         vm.prank(authorizedCaller);
@@ -182,8 +179,8 @@ contract CapEnforcementFuzz is FuzzTest {
       }
     }
 
-    // Invariant: cumulative bids should never exceed permit max
-    assertLe(permitter.getBidAmount(bidder), permitMax);
+    // Invariant: cumulative bids should never exceed maxTokensPerBidder
+    assertLe(permitter.getBidAmount(bidder), MAX_TOKENS_PER_BIDDER);
   }
 
   /// @notice Fuzz test that total ETH raised never exceeds max.
@@ -199,7 +196,7 @@ contract CapEnforcementFuzz is FuzzTest {
       // Generate deterministic random ETH values from seed
       uint256 ethValue = bound(uint256(keccak256(abi.encode(seed, i))), 1, MAX_TOTAL_ETH);
 
-      bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+      bytes memory permitData = _createPermitSignature(bidder, expiry);
 
       if (totalEth + ethValue <= MAX_TOTAL_ETH) {
         // Should succeed
@@ -232,7 +229,7 @@ contract ExpiryEnforcementFuzz is FuzzTest {
     vm.assume(timePastExpiry > 0 && timePastExpiry < 365 days);
 
     uint256 expiry = block.timestamp;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // Warp past expiry
     vm.warp(expiry + timePastExpiry);
@@ -250,7 +247,7 @@ contract ExpiryEnforcementFuzz is FuzzTest {
     vm.assume(timeBeforeExpiry > 0 && timeBeforeExpiry < 365 days);
 
     uint256 expiry = block.timestamp + timeBeforeExpiry;
-    bytes memory permitData = _createPermitSignature(bidder, MAX_TOKENS_PER_BIDDER, expiry);
+    bytes memory permitData = _createPermitSignature(bidder, expiry);
 
     // Warp to just before expiry
     vm.warp(expiry - 1);
@@ -340,6 +337,7 @@ contract FactoryFuzz is FuzzTest {
     address fuzzedTrustedSigner,
     uint256 maxTotalEth,
     uint256 maxTokensPerBidder,
+    uint256 minTokensPerBidder,
     address fuzzedOwner,
     address fuzzedAuthorizedCaller,
     bytes32 salt
@@ -350,6 +348,7 @@ contract FactoryFuzz is FuzzTest {
     // Bound to valid non-zero caps
     maxTotalEth = bound(maxTotalEth, 1, type(uint256).max);
     maxTokensPerBidder = bound(maxTokensPerBidder, 1, type(uint256).max);
+    minTokensPerBidder = bound(minTokensPerBidder, 0, maxTokensPerBidder);
 
     vm.startPrank(deployer);
 
@@ -357,6 +356,7 @@ contract FactoryFuzz is FuzzTest {
       fuzzedTrustedSigner,
       maxTotalEth,
       maxTokensPerBidder,
+      minTokensPerBidder,
       fuzzedOwner,
       fuzzedAuthorizedCaller,
       salt
@@ -366,6 +366,7 @@ contract FactoryFuzz is FuzzTest {
       fuzzedTrustedSigner,
       maxTotalEth,
       maxTokensPerBidder,
+      minTokensPerBidder,
       fuzzedOwner,
       fuzzedAuthorizedCaller,
       salt
@@ -385,11 +386,23 @@ contract FactoryFuzz is FuzzTest {
     vm.startPrank(deployer);
 
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt1
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt1
     );
 
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt2
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt2
     );
 
     vm.stopPrank();
@@ -409,12 +422,24 @@ contract FactoryFuzz is FuzzTest {
 
     vm.prank(deployer1);
     address addr1 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt
     );
 
     vm.prank(deployer2);
     address addr2 = factory.predictPermitterAddress(
-      trustedSigner, MAX_TOTAL_ETH, MAX_TOKENS_PER_BIDDER, owner, authorizedCaller, salt
+      trustedSigner,
+      MAX_TOTAL_ETH,
+      MAX_TOKENS_PER_BIDDER,
+      MIN_TOKENS_PER_BIDDER,
+      owner,
+      authorizedCaller,
+      salt
     );
 
     assertTrue(addr1 != addr2);

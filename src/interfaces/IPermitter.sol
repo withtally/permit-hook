@@ -8,16 +8,15 @@ interface IPermitter {
   /// @notice Enum for cap types used in events.
   enum CapType {
     TOTAL_ETH,
-    TOKENS_PER_BIDDER
+    MAX_TOKENS_PER_BIDDER,
+    MIN_TOKENS_PER_BIDDER
   }
 
   /// @notice The permit structure containing bidder authorization data.
   /// @param bidder Address authorized to bid.
-  /// @param maxBidAmount Maximum tokens this bidder can purchase (cumulative).
   /// @param expiry Timestamp when permit expires.
   struct Permit {
     address bidder;
-    uint256 maxBidAmount;
     uint256 expiry;
   }
 
@@ -46,6 +45,11 @@ interface IPermitter {
   /// @param alreadyRaised The amount already raised.
   error ExceedsTotalCap(uint256 requested, uint256 cap, uint256 alreadyRaised);
 
+  /// @notice Emitted when a bid is below the minimum amount.
+  /// @param bidAmount The bid amount that was attempted.
+  /// @param minRequired The minimum required bid amount.
+  error BidBelowMinimum(uint256 bidAmount, uint256 minRequired);
+
   /// @notice Emitted when the caller is not authorized.
   error Unauthorized();
 
@@ -57,6 +61,11 @@ interface IPermitter {
 
   /// @notice Emitted when a cap value is invalid (zero).
   error InvalidCap();
+
+  /// @notice Emitted when minTokensPerBidder exceeds maxTokensPerBidder.
+  /// @param minTokens The minimum tokens per bidder.
+  /// @param maxTokens The maximum tokens per bidder.
+  error MinTokensExceedsMaxTokens(uint256 minTokens, uint256 maxTokens);
 
   /// @notice Emitted when proposed cap is below current amount.
   /// @param proposed The proposed new cap.
@@ -153,6 +162,15 @@ interface IPermitter {
   /// @dev Reverts if no update is scheduled or delay hasn't passed.
   function executeUpdateMaxTokensPerBidder() external;
 
+  /// @notice Schedule an update to the minimum tokens per bidder (owner only).
+  /// @dev Update will be executable after UPDATE_DELAY has passed.
+  /// @param newMinTokensPerBidder New minimum tokens per bidder.
+  function scheduleUpdateMinTokensPerBidder(uint256 newMinTokensPerBidder) external;
+
+  /// @notice Execute a scheduled update to the minimum tokens per bidder (owner only).
+  /// @dev Reverts if no update is scheduled or delay hasn't passed.
+  function executeUpdateMinTokensPerBidder() external;
+
   /// @notice Schedule an update to the trusted signer address (owner only).
   /// @dev Update will be executable after UPDATE_DELAY has passed.
   /// @param newSigner New trusted signer address.
@@ -194,6 +212,10 @@ interface IPermitter {
   /// @return The maximum tokens per bidder cap.
   function maxTokensPerBidder() external view returns (uint256);
 
+  /// @notice Get the minimum tokens per bidder.
+  /// @return The minimum tokens per bidder.
+  function minTokensPerBidder() external view returns (uint256);
+
   /// @notice Get the owner address.
   /// @return The owner address.
   function owner() external view returns (address);
@@ -225,6 +247,14 @@ interface IPermitter {
   /// @notice Get the time when pending max tokens per bidder update can be executed.
   /// @return The timestamp.
   function pendingMaxTokensPerBidderTime() external view returns (uint256);
+
+  /// @notice Get the pending min tokens per bidder update.
+  /// @return The pending value.
+  function pendingMinTokensPerBidder() external view returns (uint256);
+
+  /// @notice Get the time when pending min tokens per bidder update can be executed.
+  /// @return The timestamp.
+  function pendingMinTokensPerBidderTime() external view returns (uint256);
 
   /// @notice Get the pending trusted signer update.
   /// @return The pending address.

@@ -12,8 +12,7 @@ import {IPermitter} from "./interfaces/IPermitter.sol";
 /// chainId and verifyingContract to prevent cross-chain and cross-auction replay attacks.
 contract Permitter is IPermitter, EIP712 {
   /// @notice EIP-712 typehash for the Permit struct.
-  bytes32 public constant PERMIT_TYPEHASH =
-    keccak256("Permit(address bidder,uint256 maxBidAmount,uint256 expiry)");
+  bytes32 public constant PERMIT_TYPEHASH = keccak256("Permit(address bidder,uint256 expiry)");
 
   /// @notice Timelock delay for parameter updates (1 hour).
   uint256 public constant UPDATE_DELAY = 1 hours;
@@ -26,6 +25,9 @@ contract Permitter is IPermitter, EIP712 {
 
   /// @notice Maximum tokens any single bidder can purchase.
   uint256 public maxTokensPerBidder;
+
+  /// @notice Minimum tokens any single bidder must purchase per bid.
+  uint256 public minTokensPerBidder;
 
   /// @notice Cumulative bid amounts per address.
   mapping(address bidder => uint256 amount) public cumulativeBids;
@@ -54,6 +56,12 @@ contract Permitter is IPermitter, EIP712 {
   /// @notice Time when pending maxTokensPerBidder update can be executed.
   uint256 public pendingMaxTokensPerBidderTime;
 
+  /// @notice Pending minTokensPerBidder update value.
+  uint256 public pendingMinTokensPerBidder;
+
+  /// @notice Time when pending minTokensPerBidder update can be executed.
+  uint256 public pendingMinTokensPerBidderTime;
+
   /// @notice Pending trustedSigner update address.
   address public pendingTrustedSigner;
 
@@ -70,12 +78,14 @@ contract Permitter is IPermitter, EIP712 {
   /// @param _trustedSigner Address authorized to sign permits.
   /// @param _maxTotalEth Maximum total ETH that can be raised.
   /// @param _maxTokensPerBidder Maximum tokens any single bidder can purchase.
+  /// @param _minTokensPerBidder Minimum tokens any single bidder must purchase per bid.
   /// @param _owner Address that can update caps and pause.
   /// @param _authorizedCaller CCA contract authorized to call validateBid.
   constructor(
     address _trustedSigner,
     uint256 _maxTotalEth,
     uint256 _maxTokensPerBidder,
+    uint256 _minTokensPerBidder,
     address _owner,
     address _authorizedCaller
   ) EIP712("Permitter", "1") {
@@ -83,10 +93,14 @@ contract Permitter is IPermitter, EIP712 {
     if (_owner == address(0)) revert InvalidOwner();
     if (_maxTotalEth == 0) revert InvalidCap();
     if (_maxTokensPerBidder == 0) revert InvalidCap();
+    if (_minTokensPerBidder > _maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(_minTokensPerBidder, _maxTokensPerBidder);
+    }
 
     trustedSigner = _trustedSigner;
     maxTotalEth = _maxTotalEth;
     maxTokensPerBidder = _maxTokensPerBidder;
+    minTokensPerBidder = _minTokensPerBidder;
     owner = _owner;
     authorizedCaller = _authorizedCaller;
   }
@@ -104,45 +118,41 @@ contract Permitter is IPermitter, EIP712 {
     // 1. CHEAPEST: Check if paused
     if (paused) revert ContractPaused();
 
-    // 2. Decode permit data
+    // 2. CHEAP: Check minimum bid amount
+    if (bidAmount < minTokensPerBidder) revert BidBelowMinimum(bidAmount, minTokensPerBidder);
+
+    // 3. Decode permit data
     (Permit memory permit, bytes memory signature) = abi.decode(permitData, (Permit, bytes));
 
-    // 3. CHEAP: Check time window
-    if (block.timestamp > permit.expiry) {
-      revert SignatureExpired(permit.expiry, block.timestamp);
-    }
+    // 4. CHEAP: Check time window
+    if (block.timestamp > permit.expiry) revert SignatureExpired(permit.expiry, block.timestamp);
 
-    // 4. MODERATE: Verify EIP-712 signature
+    // 5. MODERATE: Verify EIP-712 signature
     address recovered = _recoverSigner(permit, signature);
     if (recovered != trustedSigner) revert InvalidSignature(trustedSigner, recovered);
 
-    // 5. Check permit is for this bidder
+    // 6. Check permit is for this bidder
     if (permit.bidder != bidder) revert InvalidSignature(bidder, permit.bidder);
 
-    // 6. STORAGE READ: Check individual cap
+    // 7. STORAGE READ: Check individual cap using maxTokensPerBidder
     uint256 alreadyBid = cumulativeBids[bidder];
     uint256 newCumulative = alreadyBid + bidAmount;
-    if (newCumulative > permit.maxBidAmount) {
-      revert ExceedsPersonalCap(bidAmount, permit.maxBidAmount, alreadyBid);
-    }
-
-    // Also check against global maxTokensPerBidder if it's lower
     if (newCumulative > maxTokensPerBidder) {
       revert ExceedsPersonalCap(bidAmount, maxTokensPerBidder, alreadyBid);
     }
 
-    // 7. STORAGE READ: Check global cap
+    // 8. STORAGE READ: Check global cap
     uint256 alreadyRaised = totalEthRaised;
     uint256 newTotalEth = alreadyRaised + ethValue;
     if (newTotalEth > maxTotalEth) revert ExceedsTotalCap(ethValue, maxTotalEth, alreadyRaised);
 
-    // 8. STORAGE WRITE: Update state
+    // 9. STORAGE WRITE: Update state
     cumulativeBids[bidder] = newCumulative;
     totalEthRaised = newTotalEth;
 
-    // 9. Emit event for monitoring
+    // 10. Emit event for monitoring
     emit PermitVerified(
-      bidder, bidAmount, permit.maxBidAmount - newCumulative, maxTotalEth - newTotalEth
+      bidder, bidAmount, maxTokensPerBidder - newCumulative, maxTotalEth - newTotalEth
     );
 
     return true;
@@ -187,7 +197,7 @@ contract Permitter is IPermitter, EIP712 {
     pendingMaxTokensPerBidder = newMaxTokensPerBidder;
     pendingMaxTokensPerBidderTime = executeTime;
 
-    emit CapUpdateScheduled(CapType.TOKENS_PER_BIDDER, newMaxTokensPerBidder, executeTime);
+    emit CapUpdateScheduled(CapType.MAX_TOKENS_PER_BIDDER, newMaxTokensPerBidder, executeTime);
   }
 
   /// @inheritdoc IPermitter
@@ -204,7 +214,40 @@ contract Permitter is IPermitter, EIP712 {
     pendingMaxTokensPerBidder = 0;
     pendingMaxTokensPerBidderTime = 0;
 
-    emit CapUpdated(CapType.TOKENS_PER_BIDDER, oldCap, maxTokensPerBidder);
+    emit CapUpdated(CapType.MAX_TOKENS_PER_BIDDER, oldCap, maxTokensPerBidder);
+  }
+
+  /// @inheritdoc IPermitter
+  function scheduleUpdateMinTokensPerBidder(uint256 newMinTokensPerBidder) external onlyOwner {
+    if (newMinTokensPerBidder > maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(newMinTokensPerBidder, maxTokensPerBidder);
+    }
+
+    uint256 executeTime = block.timestamp + UPDATE_DELAY;
+    pendingMinTokensPerBidder = newMinTokensPerBidder;
+    pendingMinTokensPerBidderTime = executeTime;
+
+    emit CapUpdateScheduled(CapType.MIN_TOKENS_PER_BIDDER, newMinTokensPerBidder, executeTime);
+  }
+
+  /// @inheritdoc IPermitter
+  function executeUpdateMinTokensPerBidder() external onlyOwner {
+    if (pendingMinTokensPerBidderTime == 0) revert UpdateNotScheduled();
+    if (block.timestamp < pendingMinTokensPerBidderTime) {
+      revert UpdateTooEarly(pendingMinTokensPerBidderTime, block.timestamp);
+    }
+    if (pendingMinTokensPerBidder > maxTokensPerBidder) {
+      revert MinTokensExceedsMaxTokens(pendingMinTokensPerBidder, maxTokensPerBidder);
+    }
+
+    uint256 oldMin = minTokensPerBidder;
+    minTokensPerBidder = pendingMinTokensPerBidder;
+
+    // Clear pending update
+    pendingMinTokensPerBidder = 0;
+    pendingMinTokensPerBidderTime = 0;
+
+    emit CapUpdated(CapType.MIN_TOKENS_PER_BIDDER, oldMin, minTokensPerBidder);
   }
 
   /// @inheritdoc IPermitter
@@ -279,8 +322,7 @@ contract Permitter is IPermitter, EIP712 {
     view
     returns (address)
   {
-    bytes32 structHash =
-      keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.maxBidAmount, permit.expiry));
+    bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, permit.bidder, permit.expiry));
     bytes32 digest = _hashTypedDataV4(structHash);
     return ECDSA.recover(digest, signature);
   }
